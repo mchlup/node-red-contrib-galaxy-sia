@@ -1,31 +1,31 @@
-module.exports = function (RED) {
-  const net = require("net");
+module.exports = function(RED) {
+  const net      = require("net");
   const parseSIA = require("./lib/sia-parser");
-  const { siaCRC, pad } = require("./lib/sia-parser");
-
-  // ───────────────────────────────── ACK helpers
-  function buildAckPacket(account, seq = "00", rcv = "R0", lpref = "L0") {
-    const body = `ACK${seq}${rcv}${lpref}#${account}`;
-    const len = pad(body.length, 4);
-    const crc = siaCRC(body);
-    // SIA DC-09 ACK = <LF><CRC><LEN><BODY><CR>
-    return `\n${crc}${len}${body}\r`;
-  }
+  const siaCRC   = parseSIA.siaCRC;
+  const pad      = parseSIA.pad;
 
   function getAckString(cfg, rawStr) {
     switch (cfg.ackType) {
-      case "A_CRLF": return "A\r\n";
-      case "A": return "A";
-      case "ACK_CRLF": return "ACK\r\n";
-      case "ACK": return "ACK";
-      case "ECHO": return rawStr;
-      case "ECHO_TRIM_END": return rawStr.slice(0, -1);
+      case "A_CRLF":              return "A\r\n";
+      case "A":                   return "A";
+      case "ACK_CRLF":            return "ACK\r\n";
+      case "ACK":                 return "ACK";
+      case "ECHO":                return rawStr;
+      case "ECHO_TRIM_END":       return rawStr.slice(0, -1);
       case "ECHO_STRIP_NONPRINT": return rawStr.replace(/[\x00-\x1F\x7F]+$/g, "");
-      case "ECHO_TRIM_BOTH": return rawStr.trim();
-      case "CUSTOM": return cfg.ackCustom || "";
+      case "ECHO_TRIM_BOTH":      return rawStr.trim();
+      case "CUSTOM":              return cfg.ackCustom || "";
       case "SIA_PACKET":
-      default: return buildAckPacket(cfg.account);
+      default:
+        return buildAckPacket(cfg.account);
     }
+  }
+
+  function buildAckPacket(account, seq = "00", rcv = "R0", lpref = "L0") {
+    const body = `ACK${seq}${rcv}${lpref}#${account}`;
+    const len  = pad(body.length, 4);
+    const crc  = siaCRC(body);
+    return `\n${crc}${len}${body}\r`;
   }
 
   function sendAck(socket, ackStr) {
