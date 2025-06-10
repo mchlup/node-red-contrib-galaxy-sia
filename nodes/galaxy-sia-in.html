@@ -1,5 +1,5 @@
 <script type="text/javascript">
-RED.nodes.registerType('galaxy-sia-in',{
+RED.nodes.registerType('galaxy-sia-in', {
   category: 'input',
   color: '#a6d7a8',
   defaults: {
@@ -17,22 +17,34 @@ RED.nodes.registerType('galaxy-sia-in',{
 
 <script type="text/html" data-template-name="galaxy-sia-in">
   <div class="form-row">
-    <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
-    <input type="text" id="node-input-name" placeholder="Name">
+    <label for="node-input-name"><i class="fa fa-tag"></i> Název</label>
+    <input type="text" id="node-input-name" placeholder="Název uzlu">
   </div>
   <div class="form-row">
-    <label for="node-input-config"><i class="fa fa-cog"></i> Config</label>
+    <label for="node-input-config"><i class="fa fa-cog"></i> Konfigurace</label>
     <input type="text" id="node-input-config" data-input-type="node-config" data-input-name="config">
   </div>
 </script>
 
 <script type="text/html" data-help-name="galaxy-sia-in">
-  <p>Receives incoming SIA DC‑09 alarm/event messages from a Galaxy panel.</p>
-  <h3>Outputs</h3>
+  <p>
+    Příchozí uzel pro SIA DC-09 zprávy. Přijímá události z ústředny Galaxy Dimension. <br>
+    <b>Podporuje AES-128 šifrování</b> (pokud je v konfiguračním uzlu povoleno).
+  </p>
+  <h3>Výstup</h3>
   <dl class="message-properties">
     <dt>msg.payload <span class="property-type">object</span></dt>
-    <dd>Fields: account, code, zone, timestamp, description, raw</dd>
+    <dd>
+      <ul>
+        <li><b>account</b> – účet</li>
+        <li><b>code</b> – kód události</li>
+        <li><b>zone</b> – zóna/skupina (volitelné)</li>
+        <li><b>description</b> – text popisu (pokud panel posílá)</li>
+        <li><b>timestamp</b> – čas události</li>
+        <li><b>crcOk</b> – kontrola integrity (true/false)</li>
+        <li><b>decrypted</b> – dešifrovaný payload (pouze při AES)</li>
+        <li><b>raw</b> – původní zpráva</li>
+      </ul>
+    </dd>
   </dl>
-  <h3>Configuration</h3>
-  <p>Select the <b>galaxy-sia-config</b> node to connect transport settings (IP, port, SIA level, encryption etc.).</p>
 </script>
