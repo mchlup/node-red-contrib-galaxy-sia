@@ -21,7 +21,7 @@ module.exports = function(RED) {
     this.periodicReportInterval = Number(n.periodicReportInterval) || 0;
     this.discardTestMessages = n.discardTestMessages === true || n.discardTestMessages === "true";
     this.deviceList = n.deviceList || "";
-    this.ackType = n.ackType || "A_CRLF";
+    this.ackType = n.ackType || "ECHO_TRIM_END";
     this.ackCustom = n.ackCustom || "";
   }
 
