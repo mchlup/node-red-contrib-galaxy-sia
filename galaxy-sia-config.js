@@ -21,6 +21,8 @@ module.exports = function(RED) {
     this.periodicReportInterval = Number(n.periodicReportInterval) || 0;
     this.discardTestMessages = n.discardTestMessages === true || n.discardTestMessages === "true";
     this.deviceList = n.deviceList || "";
+    this.ackType = n.ackType || "A_CRLF";
+    this.ackCustom = n.ackCustom || "";
   }
 
   RED.nodes.registerType("galaxy-sia-config", GalaxySIAConfigNode);
