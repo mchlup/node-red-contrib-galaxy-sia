@@ -6,6 +6,7 @@ module.exports = function(RED) {
     RED.nodes.createNode(this, config);
     this.configNode = RED.nodes.getNode(config.config);
     const cfg = this.configNode;
+    const node = this;
     let client = null;
 
     function ensureConnection(cb) {
@@ -19,6 +20,19 @@ module.exports = function(RED) {
       ensureConnection(() => {
         const cmd = buildCommand(cfg.account, c, group, cfg.encryption, cfg.encryptionKey, cfg.encryptionHex);
         client.write(cmd + "\r\n");
+
+        // Debug výstup – vše co bylo odesláno
+        const msgDebug = {
+          payload: {
+            type: 'out',
+            timestamp: new Date().toISOString(),
+            remoteAddress: cfg.panelIP,
+            raw: cmd
+          }
+        };
+
+        // V hlavním výstupu (index 0) nemusíš posílat nic, nebo potvrzení
+        node.send([null, msgDebug]);
       });
     });
 
