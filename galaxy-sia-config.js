@@ -25,6 +25,9 @@ module.exports = function(RED) {
     // ACK handshake – defaultně echo bez CRLF
     this.ackType = n.ackType || "ECHO_TRIM_END";
     this.ackCustom = n.ackCustom || "";
+
+    // *** NOVĚ: debug flag ***
+    this.debug = n.debug === true || n.debug === "true";
   }
 
   RED.nodes.registerType("galaxy-sia-config", GalaxySIAConfigNode);
