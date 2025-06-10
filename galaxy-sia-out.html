@@ -1,13 +1,13 @@
 <script type="text/javascript">
 RED.nodes.registerType('galaxy-sia-out', {
-  category: 'galaxy-sia',   // <-- změna zde!
+  category: 'galaxy-sia',
   color: '#eea8a8',
   defaults: {
     name: {value:""},
     config: {type:"galaxy-sia-config", required:true}
   },
   inputs: 1,
-  outputs: 0,
+  outputs: 2,
   icon: "font-awesome/fa-upload",
   label: function() {
     return this.name || "galaxy-sia-out";
@@ -36,18 +36,19 @@ msg.payload = {
 
 <script type="text/html" data-help-name="galaxy-sia-out">
   <p>
-    Odesílá příkazy (např. ARM/DISARM) ústředně Galaxy v SIA DC-09 formátu.
+    Odesílá příkazy (např. ARM/DISARM) ústředně Galaxy v SIA DC-09 formátu.<br>
     Pokud je v konfiguraci povoleno šifrování (AES-128), příkaz je automaticky zašifrován.
   </p>
-  <h3>Vstup</h3>
-  <dl class="message-properties">
-    <dt>msg.payload <span class="property-type">object</span></dt>
-    <dd>
-      <ul>
-        <li><b>command</b> – povinný, kód příkazu (např. AR, DA...)</li>
-        <li><b>group</b> – nepovinné, číslo skupiny</li>
-      </ul>
-    </dd>
-  </dl>
-  <p>Pro šifrovaný provoz musí být v konfiguračním uzlu správně vyplněn klíč a povoleno "Encryption".</p>
+  <h3>Výstupy</h3>
+  <ol>
+    <li>
+      <b>Hlavní výstup</b>: není používán (rezervováno pro rozšíření).
+    </li>
+    <li>
+      <b>Debug výstup</b>: Všechny raw zprávy odeslané tímto uzlem.
+      <br><code>msg.payload.raw</code> je text zprávy.
+      <br><code>msg.payload.type</code> je <b>'out'</b>.
+      <br><code>msg.payload.timestamp</code>, <code>msg.payload.remoteAddress</code>
+    </li>
+  </ol>
 </script>
