@@ -29,7 +29,6 @@ module.exports = function(RED) {
   }
 
   function sendAck(socket, ackStr) {
-    // Pokud začíná LF = binární SIA paket, posíláme jako Buffer
     if (ackStr.startsWith("\n")) {
       socket.write(Buffer.from(ackStr, "binary"));
     } else {
@@ -37,34 +36,29 @@ module.exports = function(RED) {
     }
   }
 
-  // ───────────────────────────────── Node implementation
   function GalaxySIAInNode(config) {
     RED.nodes.createNode(this, config);
     const cfg = RED.nodes.getNode(config.config);
     const node = this;
 
-    const server = net.createServer((socket) => {
-      socket.on("data", (raw) => {
+    const server = net.createServer(socket => {
+      socket.on("data", raw => {
         const rawStr = raw.toString();
         const handshakeMatch = rawStr.match(/^([FD]#?[0-9A-Za-z]+)[^\r\n]*/);
 
-        // ── Handshake
+        // ── Handshake (ACK volbou getAckString)
         if (handshakeMatch) {
-          //const ackPacket = buildAckPacket(cfg.account);
-          const ackPacket = buildAckPacket(cfg.account, parsed.seq);
+          const ackPacket = getAckString(cfg, rawStr);
           sendAck(socket, ackPacket);
-          node.send([
-            null,
-            {
-              payload: {
-                type:      'handshake',
-                raw:       rawStr,
-                ackRaw:    ackPacket,      // binární paket
-                ack:       ackPacket,      // pro jednoduché debugování
-                timestamp: new Date().toISOString()
-              }
+          node.send([ null, {
+            payload: {
+              type:      'handshake',
+              raw:       rawStr,
+              ackRaw:    ackPacket,
+              ack:       ackPacket,
+              timestamp: new Date().toISOString()
             }
-          ]);
+          }]);
           return;
         }
 
@@ -78,28 +72,27 @@ module.exports = function(RED) {
         );
 
         let msgMain = null;
-        if (parsed?.valid && (!cfg.discardTestMessages || parsed.code !== "DUH")) {
+        if (parsed.valid && (!cfg.discardTestMessages || parsed.code !== "DUH")) {
           msgMain = { payload: parsed };
-
-          // ACK na každou validní zprávu
-          const ackStr = buildAckPacket(cfg.account);
-          sendAck(socket, ackStr);
+          // ACK s parsed.seq
+          const ackEv = buildAckPacket(cfg.account, parsed.seq);
+          sendAck(socket, ackEv);
         }
 
-        // Debug výstup
+        // Debug raw/event
         const msgDebug = {
           payload: {
-            type: "in",
+            type:      parsed.valid ? 'in' : 'raw',
             timestamp: new Date().toISOString(),
             remoteAddress: socket.remoteAddress,
-            raw: rawStr,
-          },
+            raw:       rawStr
+          }
         };
-        node.send([msgMain, msgDebug]);
+        node.send([ msgMain, msgDebug ]);
       });
     }).listen(cfg.panelPort);
 
-    this.on("close", (done) => server.close(done));
+    this.on("close", done => server.close(done));
   }
 
   RED.nodes.registerType("galaxy-sia-in", GalaxySIAInNode);
