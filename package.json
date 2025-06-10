@@ -1,0 +1,17 @@
+{
+  "name": "node-red-contrib-galaxy-sia",
+  "version": "0.1.0",
+  "description": "Node-RED SIA DC-09 integration for Honeywell Galaxy Dimension",
+  "main": "galaxy-sia-in.js",
+  "dependencies": {
+    "net": "^1.0.0",
+    "crypto": "^1.0.1"
+  },
+  "node-red": {
+    "nodes": {
+      "galaxy-sia-config": "galaxy-sia-config.js",
+      "galaxy-sia-in": "galaxy-sia-in.js",
+      "galaxy-sia-out": "galaxy-sia-out.js"
+    }
+  }
+}
