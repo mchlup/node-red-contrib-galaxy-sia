@@ -7,6 +7,8 @@ RED.nodes.registerType('galaxy-sia-config', {
     panelIP: { value:"", required:true },
     panelPort: { value:"10002", required:true, validate:RED.validators.number() },
     siaLevel: { value:"4", required:true, validate:RED.validators.number() },
+    ackType: { value: "A_CRLF" },
+    ackCustom: { value: "" },
     encryption: { value:false },
     encryptionKey: { value:"" },
     encryptionHex: { value:false },
@@ -49,6 +51,30 @@ RED.nodes.registerType('galaxy-sia-config', {
       <option value="4" selected>4 (Control)</option>
     </select>
   </div>
+  <div class="form-row">
+    <label for="node-config-input-ackType"><i class="fa fa-reply"></i> Typ ACK odpovědi</label>
+    <select id="node-config-input-ackType">
+      <option value="A_CRLF" selected>A + CRLF ("A\r\n")</option>
+      <option value="A">A (jen znak)</option>
+      <option value="ACK_CRLF">ACK + CRLF ("ACK\r\n")</option>
+      <option value="ACK">ACK (jen text)</option>
+      <option value="ECHO">Echo původní zprávy</option>
+      <option value="CUSTOM">Vlastní odpověď</option>
+    </select>
+  </div>
+  <div class="form-row" id="ack-custom-row" style="display:none;">
+    <label for="node-config-input-ackCustom"><i class="fa fa-pencil"></i> Vlastní ACK</label>
+    <input type="text" id="node-config-input-ackCustom" placeholder="např. OK\r\n">
+  </div>
+  <script>
+    $("#node-config-input-ackType").on("change", function() {
+    if ($(this).val() === "CUSTOM") {
+      $("#ack-custom-row").show();
+      } else {
+        $("#ack-custom-row").hide();
+      }
+    });
+  </script>
   <div class="form-row">
     <label for="node-config-input-encryption"><i class="fa fa-lock"></i> Použít šifrování (AES-128)</label>
     <input type="checkbox" id="node-config-input-encryption" style="width:auto;">
