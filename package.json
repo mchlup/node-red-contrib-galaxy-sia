@@ -1,6 +1,6 @@
 {
   "name": "node-red-contrib-galaxy-sia",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Node-RED SIA DC-09 integration for Honeywell Galaxy Dimension panels",
   "main": "galaxy-sia-in.js",
   "keywords": [
@@ -12,7 +12,7 @@
     "honeywell",
     "security"
   ],
-  "author": "Martin Chlup <martin@chlup.cz>",
+  "author": "Martin Chlup <>",
   "license": "MIT",
   "dependencies": {
     "net": "^1.0.0"
