@@ -1,0 +1,42 @@
+<script type="text/javascript">
+RED.nodes.registerType('galaxy-sia-out',{
+  category: 'output',
+  color: '#eea8a8',
+  defaults: {
+    name: {value:""},
+    config: {type:"galaxy-sia-config", required:true}
+  },
+  inputs: 1,
+  outputs: 0,
+  icon: "font-awesome/fa-upload",
+  label: function() {
+    return this.name || "galaxy-sia-out";
+  }
+});
+</script>
+
+<script type="text/html" data-template-name="galaxy-sia-out">
+  <div class="form-row">
+    <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
+    <input type="text" id="node-input-name" placeholder="Name">
+  </div>
+  <div class="form-row">
+    <label for="node-input-config"><i class="fa fa-cog"></i> Config</label>
+    <input type="text" id="node-input-config" data-input-type="node-config" data-input-name="config">
+  </div>
+  <div class="form-row">
+    <label>Send payload as object:</label>
+    <p>msg.payload = { command: 'ARM'|'DISARM'|'STAY', group:1, user:'0001' }</p>
+  </div>
+</script>
+
+<script type="text/html" data-help-name="galaxy-sia-out">
+  <p>Sends control commands to the Galaxy panel using SIA DC‑09 format.</p>
+  <h3>Inputs</h3>
+  <dl class="message-properties">
+    <dt>msg.payload <span class="property-type">object</span></dt>
+    <dd>Fields: <code>command</code> (ARM/DISARM/STAY), <code>group</code>, <code>user</code>.</dd>
+  </dl>
+  <h3>Configuration</h3>
+  <p>Select the <b>galaxy-sia-config</b> node to connect (IP, port, account, encryption etc.).</p>
+</script>
