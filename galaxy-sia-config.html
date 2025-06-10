@@ -2,21 +2,22 @@
 RED.nodes.registerType('galaxy-sia-config', {
   category: 'config',
   defaults: {
-    name: { value:"" },
-    account: { value:"", required:true },
-    panelIP: { value:"", required:true },
-    panelPort: { value:"10002", required:true, validate:RED.validators.number() },
-    siaLevel: { value:"4", required:true, validate:RED.validators.number() },
-    ackType:   { value: "ECHO_TRIM_END" },
-    ackCustom: { value: "" },
-    encryption: { value:false },
-    encryptionKey: { value:"" },
-    encryptionHex: { value:false },
-    connectOnDemand: { value:false },
-    heartbeatInterval: { value:60, required:true, validate:RED.validators.number() },
-    periodicReportInterval: { value:0, required:true, validate:RED.validators.number() },
-    discardTestMessages: { value:true },
-    deviceList: { value:"" }
+    name:                    { value:"" },
+    account:                 { value:"", required:true },
+    panelIP:                 { value:"", required:true },
+    panelPort:               { value:"10002", required:true, validate:RED.validators.number() },
+    siaLevel:                { value:"4", required:true, validate:RED.validators.number() },
+    ackType:                 { value:"ECHO_TRIM_END" },
+    ackCustom:               { value:"" },
+    encryption:              { value:false },
+    encryptionKey:           { value:"" },
+    encryptionHex:           { value:false },
+    connectOnDemand:         { value:false },
+    heartbeatInterval:       { value:60, required:true, validate:RED.validators.number() },
+    periodicReportInterval:  { value:0, required:true, validate:RED.validators.number() },
+    discardTestMessages:     { value:true },
+    deviceList:              { value:"" },
+    debug:                   { value:false }
   },
   label: function() {
     return this.name || ("Galaxy SIA " + this.account + "@" + this.panelIP);
@@ -54,12 +55,12 @@ RED.nodes.registerType('galaxy-sia-config', {
   <div class="form-row">
     <label for="node-config-input-ackType"><i class="fa fa-reply"></i> Typ ACK odpovědi</label>
     <select id="node-config-input-ackType">
-      <option value="A_CRLF" selected>A + CRLF ("A\r\n")</option>
+      <option value="A_CRLF">A + CRLF ("A\r\n")</option>
       <option value="A">A (jen symbol)</option>
       <option value="ACK_CRLF">ACK + CRLF ("ACK\r\n")</option>
       <option value="ACK">ACK (jen text)</option>
       <option value="ECHO">Echo původní zprávy</option>
-      <option value="ECHO_TRIM_END">Echo (bez posledního znaku)</option>
+      <option value="ECHO_TRIM_END" selected>Echo (bez posledního znaku)</option>
       <option value="ECHO_STRIP_NONPRINT">Echo (odstranit netisknutelné na konci)</option>
       <option value="ECHO_TRIM_BOTH">Echo (trim start i end)</option>
       <option value="SIA_PACKET">SIA DC-09 ACK packet</option>
@@ -72,8 +73,8 @@ RED.nodes.registerType('galaxy-sia-config', {
   </div>
   <script>
     $("#node-config-input-ackType").on("change", function() {
-    if ($(this).val() === "CUSTOM") {
-      $("#ack-custom-row").show();
+      if ($(this).val() === "CUSTOM") {
+        $("#ack-custom-row").show();
       } else {
         $("#ack-custom-row").hide();
       }
@@ -115,6 +116,11 @@ RED.nodes.registerType('galaxy-sia-config', {
     </label>
     <textarea id="node-config-input-deviceList" rows="3" placeholder="Např. 0000,Alarm panel&#10;0001,PIR"></textarea>
   </div>
+  <!-- NOVĚ: debug flag -->
+  <div class="form-row">
+    <label for="node-config-input-debug"><i class="fa fa-bug"></i> Debug mode</label>
+    <input type="checkbox" id="node-config-input-debug" style="width:auto;">
+  </div>
 </script>
 
 <script type="text/html" data-help-name="galaxy-sia-config">
@@ -128,5 +134,6 @@ RED.nodes.registerType('galaxy-sia-config', {
     <li><b>Periodické reporty:</b> Interval povinných reportů (sekundy)</li>
     <li><b>Ignorovat testovací zprávy:</b> Nezobrazovat v příchozích eventech</li>
     <li><b>Seznam zařízení:</b> Volitelné pojmenování zařízení podle ID</li>
+    <li><b>Debug mode:</b> Zapne podrobné logování raw a parsed zpráv</li>
   </ul>
 </script>
