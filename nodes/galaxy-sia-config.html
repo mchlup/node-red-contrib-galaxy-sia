@@ -1,0 +1,23 @@
+<script type="text/javascript">
+RED.nodes.registerType('galaxy-sia-config',{
+  category: 'config',
+  defaults: {
+    name: { value:"" },
+    account: { value:"", required: true },
+    panelIP: { value:"", required: true },
+    panelPort: { value: "10002", required: true },
+    siaLevel: { value: "4", required: true },
+    encryption: { value: false },
+    encryptionKey: { value:"" },
+    encryptionHex: { value: false },
+    connectOnDemand: { value: false },
+    heartbeatInterval: { value: 60 },
+    periodicReportInterval: { value: 0 },
+    discardTestMessages: { value: true },
+    deviceList: { value: "" }
+  },
+  label: function() {
+    return this.name || this.account || "galaxy-sia-config";
+  }
+});
+</script>
