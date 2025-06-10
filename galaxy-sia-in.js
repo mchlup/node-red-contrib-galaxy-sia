@@ -50,7 +50,8 @@ module.exports = function(RED) {
 
         // ── Handshake
         if (handshakeMatch) {
-          const ackPacket = buildAckPacket(cfg.account);
+          //const ackPacket = buildAckPacket(cfg.account);
+          const ackPacket = buildAckPacket(cfg.account, parsed.seq);
           sendAck(socket, ackPacket);
           node.send([
             null,
