@@ -1,0 +1,38 @@
+<script type="text/javascript">
+RED.nodes.registerType('galaxy-sia-in',{
+  category: 'input',
+  color: '#a6d7a8',
+  defaults: {
+    name: {value:""},
+    config: {type:"galaxy-sia-config", required:true}
+  },
+  inputs: 0,
+  outputs: 1,
+  icon: "font-awesome/fa-bell",
+  label: function() {
+    return this.name || "galaxy-sia-in";
+  }
+});
+</script>
+
+<script type="text/html" data-template-name="galaxy-sia-in">
+  <div class="form-row">
+    <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
+    <input type="text" id="node-input-name" placeholder="Name">
+  </div>
+  <div class="form-row">
+    <label for="node-input-config"><i class="fa fa-cog"></i> Config</label>
+    <input type="text" id="node-input-config" data-input-type="node-config" data-input-name="config">
+  </div>
+</script>
+
+<script type="text/html" data-help-name="galaxy-sia-in">
+  <p>Receives incoming SIA DC‑09 alarm/event messages from a Galaxy panel.</p>
+  <h3>Outputs</h3>
+  <dl class="message-properties">
+    <dt>msg.payload <span class="property-type">object</span></dt>
+    <dd>Fields: account, code, zone, timestamp, description, raw</dd>
+  </dl>
+  <h3>Configuration</h3>
+  <p>Select the <b>galaxy-sia-config</b> node to connect transport settings (IP, port, SIA level, encryption etc.).</p>
+</script>
