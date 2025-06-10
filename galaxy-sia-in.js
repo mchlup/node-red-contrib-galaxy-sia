@@ -24,13 +24,13 @@ module.exports = function(RED) {
       socket.on("data", raw => {
         const rawStr = raw.toString();
         // --- Handshake detection: "F#account" (s volitelnými neznámými znaky)
-        const handshakeMatch = rawStr.match(/^F#?[0-9A-Za-z]+/);
+        //const handshakeMatch = rawStr.match(/^F#?[0-9A-Za-z]+/);
+        const handshakeMatch = rawStr.match(/^([FD]#?[0-9A-Za-z]+)/);
 
         if (handshakeMatch) {
           // Odpověď podle SIA DC-09
           const ackString = getAckString(cfg, rawStr);
           socket.write(ackString);
-
           // Debug výstup o handshaku (pouze na druhý výstup)
           const msgDebug = {
             payload: {
