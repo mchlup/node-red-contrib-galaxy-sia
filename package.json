@@ -15,8 +15,7 @@
   "author": "Martin Chlup <martin@chlup.cz>",
   "license": "MIT",
   "dependencies": {
-    "net": "^1.0.0",
-    "crypto": "^1.0.1"
+    "net": "^1.0.0"
   },
   "node-red": {
     "nodes": {
