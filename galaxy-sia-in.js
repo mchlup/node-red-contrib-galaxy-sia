@@ -58,7 +58,7 @@ module.exports = function(RED) {
           const ackStr = getAckString(cfg, h[1]);
           sendAck(socket, ackStr);
           node.status({fill:"green",shape:"dot",text:"handshake"});
-          node.send([{ payload: { type:"handshake" } }, null]);
+          node.send([{ payload: { type:"handshake", ack: ackStr } }, null]); // <-- doplnit ack
           return;
         }
 
@@ -84,8 +84,7 @@ module.exports = function(RED) {
 
         let msgMain = null;
         if (parsed.valid && (!cfg.discardTestMessages || parsed.code !== "DUH")) {
-          msgMain = { payload: parsed };
-          // Odeslat ACK s parsed.seq
+          msgMain = { payload: { ...parsed, ack: ackEv } };
           const ackEv = buildAckPacket(cfg.account, parsed.seq);
           sendAck(socket, ackEv);
         }
