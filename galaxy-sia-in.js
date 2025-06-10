@@ -48,17 +48,10 @@ module.exports = function(RED) {
 
         // ── Handshake (ACK volbou getAckString)
         if (handshakeMatch) {
-          const ackPacket = getAckString(cfg, rawStr);
-          sendAck(socket, ackPacket);
-          node.send([ null, {
-            payload: {
-              type:      'handshake',
-              raw:       rawStr,
-              ackRaw:    ackPacket,
-              ack:       ackPacket,
-              timestamp: new Date().toISOString()
-            }
-          }]);
+          const ackStr = getAckString(cfg, handshakeMatch[1]);
+          sendAck(socket, ackStr);
+          node.status({fill:"green",shape:"dot",text:"handshake"});
+          node.send([{ payload: { type:"handshake" } }, null]);
           return;
         }
 
@@ -71,6 +64,12 @@ module.exports = function(RED) {
           cfg.encryptionHex
         );
 
+        // Ignore messages from other accounts
+        if (parsed.account !== cfg.account) {
+          node.warn(`SIA: Ignored message with account ${parsed.account}`);
+          return;
+        }
+
         let msgMain = null;
         if (parsed.valid && (!cfg.discardTestMessages || parsed.code !== "DUH")) {
           msgMain = { payload: parsed };
@@ -79,13 +78,13 @@ module.exports = function(RED) {
           sendAck(socket, ackEv);
         }
 
-        // Debug raw/event
+        // Debug raw/event (2. port)
         const msgDebug = {
           payload: {
-            type:      parsed.valid ? 'in' : 'raw',
-            timestamp: new Date().toISOString(),
+            type:          parsed.valid ? 'in' : 'raw',
+            timestamp:     new Date().toISOString(),
             remoteAddress: socket.remoteAddress,
-            raw:       rawStr
+            raw:           rawStr
           }
         };
         node.send([ msgMain, msgDebug ]);
