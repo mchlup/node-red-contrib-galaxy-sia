@@ -7,7 +7,7 @@ RED.nodes.registerType('galaxy-sia-in', {
     config: {type:"galaxy-sia-config", required:true}
   },
   inputs: 0,
-  outputs: 1,
+  outputs: 2, // <-- Dva výstupy!
   icon: "font-awesome/fa-bell",
   label: function() {
     return this.name || "galaxy-sia-in";
@@ -32,6 +32,10 @@ RED.nodes.registerType('galaxy-sia-in', {
     <b>Podporuje AES-128 šifrování</b> (pokud je v konfiguračním uzlu povoleno).
   </p>
   <h3>Výstup</h3>
+  <ol>
+    <li><b>Hlavní výstup</b>: Událost (pouze validní SIA zprávy)</li>
+    <li><b>Debug výstup</b>: Veškeré raw zprávy přijímané tímto uzlem (payload.type = 'in')</li>
+  </ol>
   <dl class="message-properties">
     <dt>msg.payload <span class="property-type">object</span></dt>
     <dd>
