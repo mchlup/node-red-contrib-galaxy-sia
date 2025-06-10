@@ -7,7 +7,7 @@ RED.nodes.registerType('galaxy-sia-config', {
     panelIP: { value:"", required:true },
     panelPort: { value:"10002", required:true, validate:RED.validators.number() },
     siaLevel: { value:"4", required:true, validate:RED.validators.number() },
-    ackType: { value: "A_CRLF" },
+    ackType:   { value: "A_CRLF" },
     ackCustom: { value: "" },
     encryption: { value:false },
     encryptionKey: { value:"" },
