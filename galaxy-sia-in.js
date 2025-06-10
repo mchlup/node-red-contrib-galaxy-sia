@@ -1,7 +1,24 @@
 module.exports = function(RED) {
   const net = require("net");
   const parseSIA = require("./lib/sia-parser");
-  const { siaCRC, pad } = require("./lib/sia-parser"); // Import CRC/pad
+  const { siaCRC, pad } = require("./lib/sia-parser");
+
+  // 🔽 sem vlož funkci getAckString
+  function getAckString(cfg, rawStr) {
+    switch (cfg.ackType) {
+      case "A_CRLF": return "A\r\n";
+      case "A": return "A";
+      case "ACK_CRLF": return "ACK\r\n";
+      case "ACK": return "ACK";
+      case "ECHO": return rawStr;
+      case "ECHO_TRIM_END": return rawStr.slice(0, -1);
+      case "ECHO_STRIP_NONPRINT": return rawStr.replace(/[\x00-\x1F\x7F]+$/g, "");
+      case "ECHO_TRIM_BOTH": return rawStr.trim();
+      case "CUSTOM": return cfg.ackCustom || "";
+      case "SIA_PACKET": return buildAckPacket(cfg.account);
+      default: return "A\r\n";
+    }
+  }
 
   function buildAckPacket(account, seq = "00", rcv = "R0", lpref = "L0") {
     const body = `ACK${seq}${rcv}${lpref}#${account}`;
