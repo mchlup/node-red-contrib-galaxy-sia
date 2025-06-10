@@ -50,19 +50,19 @@ module.exports = function(RED) {
 
         // ── Handshake
         if (handshakeMatch) {
-          const ackStr = getAckString(cfg, rawStr);
-          sendAck(socket, ackStr);
-
+          const ackPacket = buildAckPacket(cfg.account);
+          sendAck(socket, ackPacket);
           node.send([
             null,
             {
               payload: {
-                type: "handshake",
-                raw: rawStr,
-                ackRaw: ackStr,
-                timestamp: new Date().toISOString(),
-              },
-            },
+                type:      'handshake',
+                raw:       rawStr,
+                ackRaw:    ackPacket,      // binární paket
+                ack:       ackPacket,      // pro jednoduché debugování
+                timestamp: new Date().toISOString()
+              }
+            }
           ]);
           return;
         }
