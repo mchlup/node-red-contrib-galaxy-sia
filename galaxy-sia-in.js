@@ -1,17 +1,13 @@
 module.exports = function(RED) {
   const net = require("net");
   const parseSIA = require("./lib/sia-parser");
+  const { siaCRC, pad } = require("./lib/sia-parser"); // Import CRC/pad
 
-  function getAckString(cfg, rawStr) {
-    switch (cfg.ackType) {
-      case "A_CRLF": return "A\r\n";
-      case "A": return "A";
-      case "ACK_CRLF": return "ACK\r\n";
-      case "ACK": return "ACK";
-      case "ECHO": return rawStr;
-      case "CUSTOM": return cfg.ackCustom || "";
-      default: return "A\r\n";
-    }
+  function buildAckPacket(account, seq = "00", rcv = "R0", lpref = "L0") {
+    const body = `ACK${seq}${rcv}${lpref}#${account}`;
+    const len = pad(body.length, 4);
+    const crc = siaCRC(body);
+    return `\n${crc}${len}${body}\r`;
   }
 
   function GalaxySIAInNode(config) {
@@ -23,40 +19,36 @@ module.exports = function(RED) {
     const server = net.createServer(socket => {
       socket.on("data", raw => {
         const rawStr = raw.toString();
-        // --- Robustní handshake detection včetně netisknutelných znaků ---
         const handshakeMatch = rawStr.match(/^([FD]#?[0-9A-Za-z]+)[^\r\n]*/);
 
         if (handshakeMatch) {
-          const ackString = getAckString(cfg, rawStr);
-          socket.write(ackString);
-
-          // Debug výstup o handshaku (druhý výstup)
-          const msgDebug = {
+          const ackPacket = buildAckPacket(cfg.account);
+          socket.write(ackPacket);
+          node.send([null, {
             payload: {
               type: 'handshake',
-              timestamp: new Date().toISOString(),
-              remoteAddress: socket.remoteAddress,
               raw: rawStr,
-              handshake: handshakeMatch[1],
-              ack: ackString
+              ackRaw: ackPacket,
+              timestamp: new Date().toISOString()
             }
-          };
-          node.send([null, msgDebug]);
+          }]);
           return;
         }
 
         // --- Standardní SIA zpráva ---
         const parsed = parseSIA(rawStr, cfg.siaLevel, cfg.encryption, cfg.encryptionKey, cfg.encryptionHex);
 
-        // Hlavní výstup: pouze validní zprávy, pokud nejsou ignorovány test messages
         let msgMain = null;
         if (parsed && parsed.valid) {
           if (!cfg.discardTestMessages || parsed.code !== "DUH") {
             msgMain = { payload: parsed };
+            // Odeslat SIA ACK po každé validní zprávě!
+            const ackPacket = buildAckPacket(cfg.account);
+            socket.write(ackPacket);
           }
         }
 
-        // Debug výstup: vždy raw string + info, ale typ 'in' a bez pole ack
+        // Debug výstup
         const msgDebug = {
           payload: {
             type: 'in',
