@@ -31,7 +31,7 @@ module.exports = function(RED) {
           }
         };
 
-        // V hlavním výstupu (index 0) nemusíš posílat nic, nebo potvrzení
+        // V hlavním výstupu nemusíš posílat nic, nebo potvrzení
         node.send([null, msgDebug]);
       });
     });
