@@ -5,6 +5,9 @@ CRC je automaticky generováno při odesílání příkazů a validováno u při
 
 - Všechny SIA DC-09 kompatibilní ústředny (Honeywell Galaxy, DSC, UTC, atd.) tímto ověří integritu dat.
 - Ve výstupu z parseru najdete pole `crcOk` (true/false/null), které indikuje správnost CRC.
+- Pro AES šifrování nastavte "Encryption" v konfiguračním node a zadejte 16znakový klíč.
+- Klíč lze zadat jako text (UTF-8) nebo HEX (přepínačem "Key in HEX").
+- Pokud je povoleno šifrování, payload mezi uzly i mezi Node-RED a ústřednou je šifrován dle SIA DC-09.
 
 **Poznámka:** Pokud panel používá šifrování (AES), lze parser i command rozšířit (napište mi, připravím podporu).
 
