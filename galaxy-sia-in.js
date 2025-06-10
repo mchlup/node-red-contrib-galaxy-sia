@@ -2,6 +2,18 @@ module.exports = function(RED) {
   const net = require("net");
   const parseSIA = require("./lib/sia-parser");
 
+  function getAckString(cfg, rawStr) {
+    switch (cfg.ackType) {
+      case "A_CRLF": return "A\r\n";
+      case "A": return "A";
+      case "ACK_CRLF": return "ACK\r\n";
+      case "ACK": return "ACK";
+      case "ECHO": return rawStr;
+      case "CUSTOM": return cfg.ackCustom || "";
+      default: return "A\r\n";
+    }
+  }
+
   function GalaxySIAInNode(config) {
     RED.nodes.createNode(this, config);
     this.configNode = RED.nodes.getNode(config.config);
@@ -16,7 +28,8 @@ module.exports = function(RED) {
 
         if (handshakeMatch) {
           // Odpověď podle SIA DC-09
-          socket.write("A\r\n");
+          const ackString = getAckString(cfg, rawStr);
+          socket.write(ackString);
 
           // Debug výstup o handshaku (pouze na druhý výstup)
           const msgDebug = {
@@ -25,7 +38,7 @@ module.exports = function(RED) {
               timestamp: new Date().toISOString(),
               remoteAddress: socket.remoteAddress,
               raw: rawStr,
-              ack: 'A'
+              ack: ackString
             }
           };
           node.send([null, msgDebug]);
@@ -43,7 +56,7 @@ module.exports = function(RED) {
           }
         }
 
-        // Debug výstup: vždy raw string + info
+        // Debug výstup: vždy raw string + info, ale typ 'in' a bez pole ack
         const msgDebug = {
           payload: {
             type: 'in',
