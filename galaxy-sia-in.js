@@ -11,9 +11,31 @@ module.exports = function(RED) {
     const server = net.createServer(socket => {
       socket.on("data", raw => {
         const rawStr = raw.toString();
+        // --- Handshake detection: "F#account" (s volitelnými neznámými znaky)
+        const handshakeMatch = rawStr.match(/^F#?[0-9A-Za-z]+/);
+
+        if (handshakeMatch) {
+          // Odpověď podle SIA DC-09
+          socket.write("A\r\n");
+
+          // Debug výstup o handshaku (pouze na druhý výstup)
+          const msgDebug = {
+            payload: {
+              type: 'handshake',
+              timestamp: new Date().toISOString(),
+              remoteAddress: socket.remoteAddress,
+              raw: rawStr,
+              ack: 'A'
+            }
+          };
+          node.send([null, msgDebug]);
+          return; // Zastavit další zpracování, handshake není SIA event
+        }
+
+        // --- Standardní SIA zpráva ---
         const parsed = parseSIA(rawStr, cfg.siaLevel, cfg.encryption, cfg.encryptionKey, cfg.encryptionHex);
 
-        // 1. Hlavní výstup: parsed událost (jen validní, pokud nejsou ignorovány test msg)
+        // Hlavní výstup: pouze validní zprávy, pokud nejsou ignorovány test messages
         let msgMain = null;
         if (parsed && parsed.valid) {
           if (!cfg.discardTestMessages || parsed.code !== "DUH") {
@@ -21,7 +43,7 @@ module.exports = function(RED) {
           }
         }
 
-        // 2. Debug výstup: vždy raw string + info
+        // Debug výstup: vždy raw string + info
         const msgDebug = {
           payload: {
             type: 'in',
