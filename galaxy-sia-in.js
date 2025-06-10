@@ -1,3 +1,4 @@
+// galaxy-sia-in.js
 module.exports = function(RED) {
   const net      = require("net");
   const parseSIA = require("./lib/sia-parser");
@@ -29,6 +30,7 @@ module.exports = function(RED) {
   }
 
   function sendAck(socket, ackStr) {
+    // pokud začíná novým řádkem, posíláme binárně
     if (ackStr.startsWith("\n")) {
       socket.write(Buffer.from(ackStr, "binary"));
     } else {
@@ -38,24 +40,29 @@ module.exports = function(RED) {
 
   function GalaxySIAInNode(config) {
     RED.nodes.createNode(this, config);
-    const cfg = RED.nodes.getNode(config.config);
+    const cfg  = RED.nodes.getNode(config.config);
     const node = this;
 
     const server = net.createServer(socket => {
       socket.on("data", raw => {
         const rawStr = raw.toString();
-        const handshakeMatch = rawStr.match(/^([FD]#?[0-9A-Za-z]+)[^\r\n]*/);
 
-        // ── Handshake (ACK volbou getAckString)
-        if (handshakeMatch) {
-          const ackStr = getAckString(cfg, handshakeMatch[1]);
+        // *** DEBUG RAW ***
+        if (cfg.debug) {
+          node.debug("SIA RAW: " + rawStr);
+        }
+
+        // Handshake: D#... nebo F#...
+        const h = rawStr.match(/^([FD]#?[0-9A-Za-z]+)[^\r\n]*/);
+        if (h) {
+          const ackStr = getAckString(cfg, h[1]);
           sendAck(socket, ackStr);
           node.status({fill:"green",shape:"dot",text:"handshake"});
           node.send([{ payload: { type:"handshake" } }, null]);
           return;
         }
 
-        // ── Standardní SIA zpráva
+        // Standardní SIA zpráva
         const parsed = parseSIA(
           rawStr,
           cfg.siaLevel,
@@ -64,7 +71,12 @@ module.exports = function(RED) {
           cfg.encryptionHex
         );
 
-        // Ignore messages from other accounts
+        // *** DEBUG PARSED ***
+        if (cfg.debug) {
+          node.debug("SIA PARSED: " + JSON.stringify(parsed));
+        }
+
+        // Ignorovat jiné účty
         if (parsed.account !== cfg.account) {
           node.warn(`SIA: Ignored message with account ${parsed.account}`);
           return;
@@ -73,20 +85,21 @@ module.exports = function(RED) {
         let msgMain = null;
         if (parsed.valid && (!cfg.discardTestMessages || parsed.code !== "DUH")) {
           msgMain = { payload: parsed };
-          // ACK s parsed.seq
+          // Odeslat ACK s parsed.seq
           const ackEv = buildAckPacket(cfg.account, parsed.seq);
           sendAck(socket, ackEv);
         }
 
-        // Debug raw/event (2. port)
+        // Debug výstup (2. port)
         const msgDebug = {
           payload: {
-            type:          parsed.valid ? 'in' : 'raw',
+            type:          parsed.valid ? "in" : "raw",
             timestamp:     new Date().toISOString(),
             remoteAddress: socket.remoteAddress,
             raw:           rawStr
           }
         };
+
         node.send([ msgMain, msgDebug ]);
       });
     }).listen(cfg.panelPort);
