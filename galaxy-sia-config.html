@@ -5,16 +5,16 @@ RED.nodes.registerType('galaxy-sia-config',{
   defaults: {
     name:                   { value:"" },
     panelIP:                { value:"", required:true },
-    panelPort:              { value: 10002, required: true, validate: RED.validators.number() },
+    panelPort:              { value:10002, required:true, validate:RED.validators.number() },
     account:                { value:"", required:true },
-    siaLevel:               { value: 4, validate: RED.validators.number() },
+    siaLevel:               { value:4, required:true, validate:RED.validators.number() },
     encryption:             { value:false },
     encryptionKey:          { value:"" },
     encryptionHex:          { value:false },
     discardTestMessages:    { value:false },
     ackType:                { value:"A_CRLF" },
     ackCustom:              { value:"" },
-    periodicReportInterval: { value: 0, validate: RED.validators.number() }
+    periodicReportInterval: { value:0, required:true, validate:RED.validators.number() }
   },
   credentials: {
     pin: { type: "password" }
@@ -23,61 +23,51 @@ RED.nodes.registerType('galaxy-sia-config',{
   outputs: 0,
   icon: "font-awesome/fa-cog",
   label: function() {
-    return this.name||this.panelIP;
+    return this.name || this.panelIP || "galaxy-sia-config";
   }
 });
 </script>
 
 <script type="text/html" data-template-name="galaxy-sia-config">
-  <!-- Název uzlu -->
   <div class="form-row">
     <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
-    <input type="text" id="node-input-name" data-input-name="name">
+    <input type="text" id="node-input-name">
   </div>
-  <!-- Panel IP -->
   <div class="form-row">
     <label for="node-input-panelIP"><i class="fa fa-wifi"></i> Panel IP</label>
-    <input type="text" id="node-input-panelIP" data-input-name="panelIP" placeholder="192.168.1.100">
+    <input type="text" id="node-input-panelIP" placeholder="192.168.1.100">
   </div>
-  <!-- Panel Port -->
   <div class="form-row">
     <label for="node-input-panelPort"><i class="fa fa-plug"></i> Panel Port</label>
-    <input type="number" id="node-input-panelPort" data-input-name="panelPort" value="10002" min="1" max="65535">
+    <input type="number" id="node-input-panelPort" min="1" max="65535">
   </div>
-  <!-- Account -->
   <div class="form-row">
     <label for="node-input-account"><i class="fa fa-hashtag"></i> Account</label>
-    <input type="text" id="node-input-account" data-input-name="account" placeholder="1234">
+    <input type="text" id="node-input-account">
   </div>
-  <!-- SIA Level -->
   <div class="form-row">
     <label for="node-input-siaLevel"><i class="fa fa-signal"></i> SIA Level</label>
-    <input type="number" id="node-input-siaLevel" data-input-name="siaLevel" placeholder="4" value="4">
+    <input type="number" id="node-input-siaLevel" min="1" max="4">
   </div>
-  <!-- Encryption -->
   <div class="form-row">
     <label for="node-input-encryption"><i class="fa fa-lock"></i> Encryption</label>
-    <input type="checkbox" id="node-input-encryption" data-input-name="encryption" data-input-type="checkbox">
+    <input type="checkbox" id="node-input-encryption">
   </div>
-  <!-- Encryption Key -->
   <div class="form-row">
     <label for="node-input-encryptionKey"><i class="fa fa-key"></i> Encryption Key</label>
-    <input type="text" id="node-input-encryptionKey" data-input-name="encryptionKey">
+    <input type="text" id="node-input-encryptionKey">
   </div>
-  <!-- Encryption is Hex -->
   <div class="form-row">
     <label for="node-input-encryptionHex"><i class="fa fa-code"></i> Key is Hex</label>
-    <input type="checkbox" id="node-input-encryptionHex" data-input-name="encryptionHex" data-input-type="checkbox">
+    <input type="checkbox" id="node-input-encryptionHex">
   </div>
-  <!-- Discard Test Messages -->
   <div class="form-row">
     <label for="node-input-discardTestMessages"><i class="fa fa-filter"></i> Discard Test Messages</label>
-    <input type="checkbox" id="node-input-discardTestMessages" data-input-name="discardTestMessages" data-input-type="checkbox">
+    <input type="checkbox" id="node-input-discardTestMessages">
   </div>
-  <!-- ACK Type -->
   <div class="form-row">
     <label for="node-input-ackType"><i class="fa fa-reply"></i> ACK Type</label>
-    <select id="node-input-ackType" data-input-name="ackType">
+    <select id="node-input-ackType">
       <option value="A_CRLF">A_CRLF</option>
       <option value="A">A</option>
       <option value="ACK_CRLF">ACK_CRLF</option>
@@ -85,25 +75,16 @@ RED.nodes.registerType('galaxy-sia-config',{
       <option value="CUSTOM">CUSTOM</option>
     </select>
   </div>
-  <!-- Custom ACK -->
   <div class="form-row">
     <label for="node-input-ackCustom"><i class="fa fa-pencil"></i> Custom ACK</label>
-    <input type="text" id="node-input-ackCustom" data-input-name="ackCustom">
+    <input type="text" id="node-input-ackCustom">
   </div>
-  <!-- Periodic Report Interval -->
   <div class="form-row">
     <label for="node-input-periodicReportInterval"><i class="fa fa-clock-o"></i> Periodic Report Interval (s)</label>
-    <input type="number" id="node-input-periodicReportInterval" data-input-name="periodicReportInterval" placeholder="0" value="0">
+    <input type="number" id="node-input-periodicReportInterval" min="0">
   </div>
 </script>
 
 <script type="text/html" data-help-name="galaxy-sia-config">
   <p>Configuration node for Galaxy Dimension SIA DC-09 connection.</p>
-  <ul>
-    <li><b>Panel IP/Port</b>: IP address and port of the panel.</li>
-    <li><b>Account</b>: SIA account number.</li>
-    <li><b>Encryption</b>: enable AES-128-ECB decryption.</li>
-    <li><b>ACK Type</b>: handshake ACK format.</li>
-    <li><b>Periodic Report Interval</b>: auto-poll every N seconds (0 = off).</li>
-  </ul>
 </script>
