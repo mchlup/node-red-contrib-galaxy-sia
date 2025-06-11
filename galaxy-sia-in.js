@@ -1,69 +1,99 @@
-/**
- * Galaxy SIA In Node
- * 
- * Přijímá surová SIA data z konfiguračního uzlu, parsuje je
- * a odpovídá SIA-DC09 kompatibilním ACK paketem.
- */
 module.exports = function(RED) {
-  const parseSia = require('../lib/sia-parser');
-  const siaCRC   = parseSia.siaCRC;
-  const pad      = parseSia.pad;
+  const net      = require("net");
+  const parseSIA = require("./lib/sia-parser");
+  const siaCRC   = parseSIA.siaCRC;
+  const pad      = parseSIA.pad;
 
-  function GalaxySiaInNode(config) {
-    RED.nodes.createNode(this, config);
-    const cfgNode = RED.nodes.getNode(config.config);
-    const node    = this;
-    let buffer    = '';
-
-    // Přihlásíme se k událostem 'data' z config-uzlu
-    cfgNode.on('data', chunk => {
-      buffer += chunk.toString('ascii');
-      let idx;
-      while ((idx = buffer.indexOf('\r')) >= 0) {
-        const raw = buffer.slice(0, idx);
-        buffer = buffer.slice(idx + 1);
-        handleMessage(raw);
-      }
-    });
-
-    function handleMessage(rawStr) {
-      // Handshake (D#1234 nebo F#1234)
-      const hs = rawStr.match(/^([FD]#?[0-9A-Za-z]+).*$/);
-      if (hs) {
-        // prosté echo handshake
-        cfgNode.socket.write(hs[1], 'ascii');
-        return;
-      }
-
-      // Parsování SIA zprávy
-      const parsed = parseSia.parse(rawStr);
-      if (!parsed) return;
-
-      // Ignorovat jiné účty
-      if (parsed.account !== cfgNode.account) return;
-
-      // Pokud platné, vytvořit a poslat ACK
-      if (parsed.valid) {
-        const seq      = parsed.seq   || '00';
-        const rcv      = parsed.rcv   || 'R0';
-        const lpref    = parsed.lpref || 'L0';
-        const funcChar = '\x06'; // SIA-DC09 ACK kontrolní znak
-        const body     = `${seq}${rcv}${lpref}#${cfgNode.account}`;
-        const len      = pad((funcChar + body).length, 4);
-        const crc      = siaCRC(funcChar + body);
-        const ackPkt   = `\r\n${len}${funcChar}${body}${crc}\r\n`;
-        cfgNode.socket.write(ackPkt, 'ascii');
-        node.send({ payload: { ...parsed, ack: ackPkt, raw: rawStr } });
-      } else {
-        node.warn(`Invalid CRC for message: ${rawStr}`);
-      }
+  function getAckString(cfg, rawStr) {
+    switch (cfg.ackType) {
+      case "A_CRLF":              return "A\r\n";
+      case "A":                   return "A";
+      case "ACK_CRLF":            return "ACK\r\n";
+      case "ACK":                 return "ACK";
+      case "ECHO":                return rawStr;
+      case "ECHO_TRIM_END":       return rawStr.slice(0, -1);
+      case "ECHO_STRIP_NONPRINT": return rawStr.replace(/[\x00-\x1F\x7F]+$/g, "");
+      case "ECHO_TRIM_BOTH":      return rawStr.trim();
+      case "CUSTOM":              return cfg.ackCustom || "";
+      case "SIA_PACKET":
+      default:
+        return buildAckPacket(cfg.account);
     }
-
-    this.on('close', done => {
-      // tady není co speciálně ukončovat
-      done();
-    });
   }
 
-  RED.nodes.registerType('galaxy-sia-in', GalaxySiaInNode);
+  function buildAckPacket(account, seq = "00", rcv = "R0", lpref = "L0") {
+    const body = `ACK${seq}${rcv}${lpref}#${account}`;
+    const len  = pad(body.length, 4);
+    const crc  = siaCRC(body);
+    return `\n${crc}${len}${body}\r`;
+  }
+
+  function sendAck(socket, ackStr) {
+    if (ackStr.startsWith("\n")) {
+      socket.write(Buffer.from(ackStr, "binary"));
+    } else {
+      socket.write(ackStr);
+    }
+  }
+
+  function GalaxySIAInNode(config) {
+    RED.nodes.createNode(this, config);
+    const cfg = RED.nodes.getNode(config.config);
+    const node = this;
+
+    const server = net.createServer(socket => {
+      socket.on("data", raw => {
+        const rawStr = raw.toString();
+        const handshakeMatch = rawStr.match(/^([FD]#?[0-9A-Za-z]+)[^\r\n]*/);
+
+        // ── Handshake (ACK volbou getAckString)
+        if (handshakeMatch) {
+          const ackPacket = getAckString(cfg, rawStr);
+          sendAck(socket, ackPacket);
+          node.send([ null, {
+            payload: {
+              type:      'handshake',
+              raw:       rawStr,
+              ackRaw:    ackPacket,
+              ack:       ackPacket,
+              timestamp: new Date().toISOString()
+            }
+          }]);
+          return;
+        }
+
+        // ── Standardní SIA zpráva
+        const parsed = parseSIA(
+          rawStr,
+          cfg.siaLevel,
+          cfg.encryption,
+          cfg.encryptionKey,
+          cfg.encryptionHex
+        );
+
+        let msgMain = null;
+        if (parsed.valid && (!cfg.discardTestMessages || parsed.code !== "DUH")) {
+          msgMain = { payload: parsed };
+          // ACK s parsed.seq
+          const ackEv = buildAckPacket(cfg.account, parsed.seq);
+          sendAck(socket, ackEv);
+        }
+
+        // Debug raw/event
+        const msgDebug = {
+          payload: {
+            type:      parsed.valid ? 'in' : 'raw',
+            timestamp: new Date().toISOString(),
+            remoteAddress: socket.remoteAddress,
+            raw:       rawStr
+          }
+        };
+        node.send([ msgMain, msgDebug ]);
+      });
+    }).listen(cfg.panelPort);
+
+    this.on("close", done => server.close(done));
+  }
+
+  RED.nodes.registerType("galaxy-sia-in", GalaxySIAInNode);
 };
