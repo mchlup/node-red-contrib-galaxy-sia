@@ -11,12 +11,49 @@ module.exports = function(RED) {
 
   function GalaxySiaInNode(config) {
     RED.nodes.createNode(this, config);
-    const cfg = RED.nodes.getNode(config.config); // musí vracet instanci správného typu
+    const cfg = RED.nodes.getNode(config.config);
     const node = this;
 
     if (!cfg || !cfg.panelPort) {
-      node.error("Missing configuration or panelPort");
-      return;
+        node.error("Missing configuration or panelPort");
+        node.status({fill:"red",shape:"ring",text:"Missing config"});
+        return;
+    }
+
+    // Set node status
+    node.status({fill:"yellow",shape:"dot",text:"Initializing"});
+
+    try {
+        const server = net.createServer(socket => {
+            socket.on("data", rawBuf => {
+                // Existing data handling code...
+            });
+
+            socket.on("error", err => {
+                node.error("Socket error: "+err.message);
+                node.status({fill:"red",shape:"ring",text:"Socket error"});
+            });
+        });
+
+        server.listen(cfg.panelPort, () => {
+            node.status({fill:"green",shape:"dot",text:`listening:${cfg.panelPort}`});
+        });
+
+        server.on("error", (err) => {
+            node.error("Server error: " + err.message);
+            node.status({fill:"red",shape:"ring",text:"Server error"});
+        });
+
+        this.on("close", done => {
+            if (server) {
+                server.close(done);
+            } else {
+                done();
+            }
+        });
+    } catch (err) {
+        node.error("Setup error: " + err.message);
+        node.status({fill:"red",shape:"ring",text:"Setup error"});
     }
 
     const server = net.createServer(socket => {
