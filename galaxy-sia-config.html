@@ -1,97 +1,139 @@
 <script type="text/javascript">
-RED.nodes.registerType('galaxy-sia-config',{
+RED.nodes.registerType('galaxy-sia-config', {
   category: 'config',
-  color: '#a6d7a8',
   defaults: {
-    name:                   { value:"" },
-    panelIP:                { value:"", required:true },
-    panelPort:              { value:10002, required:true, validate:RED.validators.number() },
-    account:                { value:"", required:true },
-    siaLevel:               { value:4, required:true, validate:RED.validators.number() },
-    encryption:             { value:false },
-    encryptionKey:          { value:"" },
-    encryptionHex:          { value:false },
-    discardTestMessages:    { value:false },
-    ackType:                { value:"A_CRLF" },
-    ackCustom:              { value:"" },
-    periodicReportInterval: { value:0, required:true, validate:RED.validators.number() }
+    name:                    { value:"" },
+    account:                 { value:"", required:true },
+    panelIP:                 { value:"", required:true },
+    panelPort:               { value:"10002", required:true, validate:RED.validators.number() },
+    siaLevel:                { value:"4", required:true, validate:RED.validators.number() },
+    ackType:                 { value:"ECHO_TRIM_END" },
+    ackCustom:               { value:"" },
+    encryption:              { value:false },
+    encryptionKey:           { value:"" },
+    encryptionHex:           { value:false },
+    connectOnDemand:         { value:false },
+    heartbeatInterval:       { value:60, required:true, validate:RED.validators.number() },
+    periodicReportInterval:  { value:0, required:true, validate:RED.validators.number() },
+    discardTestMessages:     { value:true },
+    deviceList:              { value:"" },
+    debug:                   { value:false }
   },
-  credentials: {
-    pin: { type: "password" }
-  },
-  inputs: 0,
-  outputs: 0,
-  icon: "font-awesome/fa-cog",
   label: function() {
-    return this.name || this.panelIP || "galaxy-sia-config";
+    return this.name || ("Galaxy SIA " + this.account + "@" + this.panelIP);
   }
 });
 </script>
 
 <script type="text/html" data-template-name="galaxy-sia-config">
   <div class="form-row">
-    <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
-    <input type="text" id="node-input-name">
+    <label for="node-config-input-name"><i class="fa fa-tag"></i> Název</label>
+    <input type="text" id="node-config-input-name" placeholder="Název konfigurace">
   </div>
   <div class="form-row">
-    <label for="node-input-panelIP"><i class="fa fa-wifi"></i> Panel IP</label>
-    <input type="text" id="node-input-panelIP" placeholder="192.168.1.100">
+    <label for="node-config-input-account"><i class="fa fa-user"></i> Účet (Account)</label>
+    <input type="text" id="node-config-input-account" placeholder="např. 000123">
   </div>
   <div class="form-row">
-    <label for="node-input-panelPort"><i class="fa fa-plug"></i> Panel Port</label>
-    <input type="number" id="node-input-panelPort" value="10002" min="1" max="65535">
+    <label for="node-config-input-panelIP"><i class="fa fa-globe"></i> Panel IP adresa</label>
+    <input type="text" id="node-config-input-panelIP" placeholder="např. 192.168.1.200">
   </div>
   <div class="form-row">
-    <label for="node-input-account"><i class="fa fa-hashtag"></i> Account</label>
-    <input type="text" id="node-input-account">
+    <label for="node-config-input-panelPort"><i class="fa fa-plug"></i> Panel port</label>
+    <input type="number" id="node-config-input-panelPort" min="1" max="65535">
   </div>
   <div class="form-row">
-    <label for="node-input-siaLevel"><i class="fa fa-signal"></i> SIA Level</label>
-    <input type="number" id="node-input-siaLevel" value="4" min="1" max="4">
-  </div>
-  <div class="form-row">
-    <label for="node-input-encryption"><i class="fa fa-lock"></i> Encryption</label>
-    <input type="checkbox" id="node-input-encryption">
-  </div>
-  <div class="form-row">
-    <label for="node-input-encryptionKey"><i class="fa fa-key"></i> Encryption Key</label>
-    <input type="text" id="node-input-encryptionKey">
-  </div>
-  <div class="form-row">
-    <label for="node-input-encryptionHex"><i class="fa fa-code"></i> Key is Hex</label>
-    <input type="checkbox" id="node-input-encryptionHex">
-  </div>
-  <div class="form-row">
-    <label for="node-input-discardTestMessages"><i class="fa fa-filter"></i> Discard Test Messages</label>
-    <input type="checkbox" id="node-input-discardTestMessages">
-  </div>
-  <div class="form-row">
-    <label for="node-input-ackType"><i class="fa fa-reply"></i> ACK Type</label>
-    <select id="node-input-ackType">
-      <option value="A_CRLF">A_CRLF</option>
-      <option value="A">A</option>
-      <option value="ACK_CRLF">ACK_CRLF</option>
-      <option value="ACK">ACK</option>
-      <option value="CUSTOM">CUSTOM</option>
+    <label for="node-config-input-siaLevel"><i class="fa fa-list-ol"></i> SIA úroveň</label>
+    <select id="node-config-input-siaLevel">
+      <option value="0">0 (Basic)</option>
+      <option value="1">1</option>
+      <option value="2">2 (Text)</option>
+      <option value="3">3</option>
+      <option value="4" selected>4 (Control)</option>
     </select>
   </div>
   <div class="form-row">
-    <label for="node-input-ackCustom"><i class="fa fa-pencil"></i> Custom ACK</label>
-    <input type="text" id="node-input-ackCustom">
+    <label for="node-config-input-ackType"><i class="fa fa-reply"></i> Typ ACK odpovědi</label>
+    <select id="node-config-input-ackType">
+      <option value="A_CRLF">A + CRLF ("A\r\n")</option>
+      <option value="A">A (jen symbol)</option>
+      <option value="ACK_CRLF">ACK + CRLF ("ACK\r\n")</option>
+      <option value="ACK">ACK (jen text)</option>
+      <option value="ECHO">Echo původní zprávy</option>
+      <option value="ECHO_TRIM_END" selected>Echo (bez posledního znaku)</option>
+      <option value="ECHO_STRIP_NONPRINT">Echo (odstranit netisknutelné na konci)</option>
+      <option value="ECHO_TRIM_BOTH">Echo (trim start i end)</option>
+      <option value="SIA_PACKET">SIA DC-09 ACK packet</option>
+      <option value="CUSTOM">Vlastní odpověď</option>
+    </select>
+  </div>
+  <div class="form-row" id="ack-custom-row" style="display:none;">
+    <label for="node-config-input-ackCustom"><i class="fa fa-pencil"></i> Vlastní ACK</label>
+    <input type="text" id="node-config-input-ackCustom" placeholder="např. OK\r\n">
+  </div>
+  <script>
+    $("#node-config-input-ackType").on("change", function() {
+      if ($(this).val() === "CUSTOM") {
+        $("#ack-custom-row").show();
+      } else {
+        $("#ack-custom-row").hide();
+      }
+    });
+  </script>
+  <div class="form-row">
+    <label for="node-config-input-encryption"><i class="fa fa-lock"></i> Použít šifrování (AES-128)</label>
+    <input type="checkbox" id="node-config-input-encryption" style="width:auto;">
   </div>
   <div class="form-row">
-    <label for="node-input-periodicReportInterval"><i class="fa fa-clock-o"></i> Periodic Report Interval (s)</label>
-    <input type="number" id="node-input-periodicReportInterval" value="0" min="0">
+    <label for="node-config-input-encryptionKey"><i class="fa fa-key"></i> Klíč (16 znaků)</label>
+    <input type="text" id="node-config-input-encryptionKey" placeholder="Zadejte 16znakový klíč">
+  </div>
+  <div class="form-row">
+    <label for="node-config-input-encryptionHex"><i class="fa fa-code"></i> Klíč je HEX</label>
+    <input type="checkbox" id="node-config-input-encryptionHex" style="width:auto;">
+    <span style="font-size:smaller; color:#888;">(Zaškrtněte, pokud je klíč v hexadecimálním zápisu)</span>
+  </div>
+  <div class="form-row">
+    <label for="node-config-input-connectOnDemand"><i class="fa fa-random"></i> Připojit jen při události</label>
+    <input type="checkbox" id="node-config-input-connectOnDemand" style="width:auto;">
+  </div>
+  <div class="form-row">
+    <label for="node-config-input-heartbeatInterval"><i class="fa fa-heartbeat"></i> Heartbeat interval (s)</label>
+    <input type="number" id="node-config-input-heartbeatInterval" min="1" max="3600">
+  </div>
+  <div class="form-row">
+    <label for="node-config-input-periodicReportInterval"><i class="fa fa-clock-o"></i> Periodické reporty (s)</label>
+    <input type="number" id="node-config-input-periodicReportInterval" min="0" max="86400">
+    <span style="font-size:smaller; color:#888;">(0 = deaktivováno)</span>
+  </div>
+  <div class="form-row">
+    <label for="node-config-input-discardTestMessages"><i class="fa fa-ban"></i> Ignorovat testovací zprávy</label>
+    <input type="checkbox" id="node-config-input-discardTestMessages" style="width:auto;">
+  </div>
+  <div class="form-row">
+    <label for="node-config-input-deviceList"><i class="fa fa-list"></i> Seznam zařízení<br>
+      <span style="font-size:smaller; color:#888;">Formát: 0000,Název<br>Každé zařízení na nový řádek</span>
+    </label>
+    <textarea id="node-config-input-deviceList" rows="3" placeholder="Např. 0000,Alarm panel&#10;0001,PIR"></textarea>
+  </div>
+  <!-- NOVĚ: debug flag -->
+  <div class="form-row">
+    <label for="node-config-input-debug"><i class="fa fa-bug"></i> Debug mode</label>
+    <input type="checkbox" id="node-config-input-debug" style="width:auto;">
   </div>
 </script>
 
 <script type="text/html" data-help-name="galaxy-sia-config">
-  <p>Configuration node for Galaxy Dimension SIA DC-09 connection.</p>
+  <p>Konfigurační node pro komunikaci se zabezpečovací ústřednou Galaxy Dimension přes SIA DC-09.</p>
   <ul>
-    <li><b>Panel IP/Port</b>: IP address and port of the panel.</li>
-    <li><b>Account</b>: SIA account number.</li>
-    <li><b>Encryption</b>: enable AES-128-ECB decryption.</li>
-    <li><b>ACK Type</b>: handshake ACK format.</li>
-    <li><b>Periodic Report Interval</b>: auto-poll every N seconds (0 = off).</li>
+    <li><b>Účet (Account):</b> SIA účet z panelu</li>
+    <li><b>Panel IP/port:</b> Adresa a port panelu</li>
+    <li><b>SIA úroveň:</b> Úroveň SIA DC-09 (0-4)</li>
+    <li><b>Šifrování:</b> Aktivuje AES-128, klíč 16 znaků (text/hex)</li>
+    <li><b>Heartbeat:</b> Interval zpráv "živosti" spojení (sekundy)</li>
+    <li><b>Periodické reporty:</b> Interval povinných reportů (sekundy)</li>
+    <li><b>Ignorovat testovací zprávy:</b> Nezobrazovat v příchozích eventech</li>
+    <li><b>Seznam zařízení:</b> Volitelné pojmenování zařízení podle ID</li>
+    <li><b>Debug mode:</b> Zapne podrobné logování raw a parsed zpráv</li>
   </ul>
 </script>
