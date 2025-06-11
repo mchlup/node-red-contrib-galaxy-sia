@@ -8,7 +8,7 @@ Node-RED SIA DC-09 integration for Honeywell Galaxy Dimension.
 
 ### 1. Konfigurační uzel `galaxy-sia-config`
 
-![Konfigurační uzel galaxy-sia-config v Node-RED](docs/galaxy-sia-config.png)
+![Konfigurační uzel galaxy-sia-config v Node-RED](docs/galaxy-sia-config-node.png)
 
 - Tento node nastavuje parametry TCP serveru, účtu, mapování a ACK.
 - V projektu je pouze jeden na všechny instance příjmových uzlů.
