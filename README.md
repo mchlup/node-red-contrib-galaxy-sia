@@ -2,29 +2,61 @@
 
 Node-RED SIA DC-09 integration for Honeywell Galaxy Dimension.
 
-## Funkce
+---
 
-- Přijímá SIA DC-09 zprávy z Galaxy Dimension panelu přes TCP.
-- Mapování čísel zón, uživatelů a oblastí na názvy pro lepší přehlednost ve výstupech.
-- Možnost dynamicky načítat mapování zón, uživatelů a oblastí z externího JSON souboru.
-- Flexibilní možnosti ACK odpovědí (včetně vlastních a DC-09 kompatibilních).
-- Heartbeat, robustní TCP server, ošetření chyb.
-- Debug/logování a bezpečnostní limity počtu spojení.
+## Grafická nápověda: Uzly v Node-RED
+
+### 1. Konfigurační uzel `galaxy-sia-config`
+
+![Konfigurační uzel galaxy-sia-config v Node-RED](docs/galaxy-sia-config.png)
+
+- Tento node nastavuje parametry TCP serveru, účtu, mapování a ACK.
+- V projektu je pouze jeden na všechny instance příjmových uzlů.
+- **Pole**:
+  - IP adresa, port, account (účtu), SIA úroveň
+  - Mapování zón, uživatelů, oblastí (staticky nebo dynamicky z externího souboru)
+  - Volba typu ACK odpovědi
 
 ---
 
-## Použití
+### 2. Vstupní uzel `galaxy-sia-in`
 
-1. Přidejte do Node-RED konfigurační node `galaxy-sia-config`.
-2. Vyplňte IP adresu a port Galaxy panelu, číslo účtu a další volitelné parametry.
-3. Pro statické mapování zadejte mapování zón/uživatelů/oblastí jako JSON.
-4. **Pro dynamické mapování** zadejte cestu k externímu JSON souboru (např. `/data/sia-zone-map.json`) do pole „Cesta k externímu mapování“ (nová volba).
+![Vstupní uzel galaxy-sia-in v Node-RED](docs/galaxy-sia-in.png)
+
+- Tento node přijímá zprávy z panelu Galaxy Dimension (TCP server).
+- **Vstupy**: Nemá vstup (je pouze receiver).
+- **Výstupy**:
+  - **1. výstup**: hlavní zpráva (zpracovaná, obsahuje naparsovanou událost a mapování)
+  - **2. výstup**: debug nebo chybové zprávy (raw zpráva, parsing error, warning...)
 
 ---
 
-## Výstupní payload
+### 3. Typické schéma v Node-RED
 
-**Základní výstup:**
+![Ukázkový flow v Node-RED](docs/galaxy-sia-example-flow.png)
+
+- `galaxy-sia-config` je připojen ke všem instancím `galaxy-sia-in`.
+- Výstup z `galaxy-sia-in` můžete napojit například na:
+  - funkční node (zpracování událostí)
+  - upozornění (e-mail, SMS, MQTT)
+  - databázi (MongoDB, InfluxDB)
+  - debug node pro ladění
+
+---
+
+## Jak to vypadá v editoru
+
+**Konfigurační node:**
+![Formulář konfigurace](docs/galaxy-sia-config-form.png)
+
+**Vstupní node a výstupy:**
+![Výstupy galaxy-sia-in](docs/galaxy-sia-in-outputs.png)
+
+---
+
+## Popis výstupních zpráv
+
+**První výstup (hlavní zpráva):**
 ```json
 {
   "zone": "1",
@@ -40,48 +72,29 @@ Node-RED SIA DC-09 integration for Honeywell Galaxy Dimension.
 }
 ```
 
----
-
-## Dynamické načítání mapování
-
-Pokud je v konfiguraci vyplněna cesta k externímu JSON souboru s mapováním, bude tento soubor načítán při každé zprávě (lze nasadit např. v Dockeru s bind-mountem nebo na síťový disk).  
-Struktura JSON souboru:
+**Druhý výstup (debug/chyby):**
 ```json
 {
-  "zoneMap": {
-    "1": "Sklad",
-    "2": "Kancelář"
-  },
-  "userMap": {
-    "007": "Petr Novák"
-  },
-  "areaMap": {
-    "1": "Hala"
-  }
+  "raw": "<původní zpráva>",
+  "parsed": { ... },
+  "ack": "<ACK packet>",
+  "zoneName": "...",
+  "userName": "...",
+  "areaName": "...",
+  "error": "<popis chyby – pouze při chybě>"
 }
 ```
-Pokud soubor není dostupný nebo je nevalidní, použije se statické mapování z konfigurace node.
 
 ---
 
-## Chybové stavy a jejich řešení
+## Poznámky k obrázkům
 
-- **Chyba "Chyba při zpracování zprávy: ..." v debug logu**  
-  Zkontrolujte formát příchozí SIA zprávy a nastavení šifrování.
-
-- **Nezobrazují se zoneName/userName/areaName**  
-  Ujistěte se, že v konfiguraci je správný JSON pro mapování nebo že cesta k externímu mapování je správná a soubor obsahuje odpovídající klíče.
-
-- **Zprávy se ignorují**  
-  Ověřte, že pole `account` v konfiguraci odpovídá účtu ve zprávě z ústředny Galaxy.
-
-- **"Překročen maximální počet spojení"**  
-  TCP server odmítl nové spojení, protože bylo dosaženo limitu (viz MAX_CONNECTIONS v kódu).
+Obrázky najdete ve složce `/docs/` tohoto repozitáře. Pokud používáte vlastní instalaci, můžete si je vytvořit screenshotem vašeho flow v Node-RED.
 
 ---
 
-## Troubleshooting
+## Další informace
 
-- Debug logy jsou dostupné v Node-RED logu.
-- V případě pádu/parsing erroru se zpráva objeví ve druhém výstupu nodu s popisem chyby.
-- Vždy validujte JSON mapování v konfiguračním node.
+Podrobný popis konfigurace, dynamického mapování a troubleshooting najdete v dalších sekcích tohoto README.
+
+---
