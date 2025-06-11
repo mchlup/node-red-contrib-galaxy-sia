@@ -1,34 +1,55 @@
-// Node-RED konfigurační node pro Galaxy SIA DC-09
+/**
+ * Galaxy SIA Config Node with auto-reconnect/back-off
+ */
 module.exports = function(RED) {
-  function GalaxySIAConfigNode(n) {
-    RED.nodes.createNode(this, n);
+  const net = require("net");
 
-    // Základní parametry
-    this.account = n.account || "";
-    this.panelIP = n.panelIP || "";
-    this.panelPort = Number(n.panelPort) || 10002;
-    this.siaLevel = Number(n.siaLevel) || 4;
+  function GalaxySiaConfigNode(config) {
+    RED.nodes.createNode(this, config);
+    const node = this;
+    node.ip = config.ip;
+    node.port = config.port;
+    node.account = config.account;
+    node.reconnectDelay = 1000;
 
-    // Šifrování
-    // Podporuje jak string, tak HEX (pro AES-128)
-    this.encryption = n.encryption === true || n.encryption === "true";
-    this.encryptionKey = n.encryptionKey || "";
-    this.encryptionHex = n.encryptionHex === true || n.encryptionHex === "true";
+    // store PIN securely
+    node.pin = this.credentials.pin;
 
-    // Další volby
-    this.connectOnDemand = n.connectOnDemand === true || n.connectOnDemand === "true";
-    this.heartbeatInterval = Number(n.heartbeatInterval) || 60;
-    this.periodicReportInterval = Number(n.periodicReportInterval) || 0;
-    this.discardTestMessages = n.discardTestMessages === true || n.discardTestMessages === "true";
-    this.deviceList = n.deviceList || "";
+    let socket;
 
-    // ACK handshake – defaultně echo bez CRLF
-    this.ackType = n.ackType || "ECHO_TRIM_END";
-    this.ackCustom = n.ackCustom || "";
+    function connect() {
+      socket = net.createConnection({ host: node.ip, port: node.port }, () => {
+        node.log('Connected to Galaxy panel');
+        node.status({ fill: 'green', shape: 'dot', text: 'connected' });
+        node.reconnectDelay = 1000; // reset delay
+      });
 
-    // *** NOVĚ: debug flag ***
-    this.debug = n.debug === true || n.debug === "true";
+      socket.on('data', data => {
+        node.emit('data', data);
+      });
+
+      socket.on('error', err => {
+        node.error(`Connection error: ${err}`);
+      });
+
+      socket.on('close', () => {
+        node.status({ fill: 'red', shape: 'ring', text: 'disconnected' });
+        setTimeout(connect, node.reconnectDelay);
+        node.reconnectDelay = Math.min(node.reconnectDelay * 2, 60000);
+      });
+
+      node.socket = socket;
+    }
+
+    connect();
+
+    this.on('close', done => {
+      if (socket) socket.end();
+      done();
+    });
   }
 
-  RED.nodes.registerType("galaxy-sia-config", GalaxySIAConfigNode);
+  RED.nodes.registerType('galaxy-sia-config', GalaxySiaConfigNode, {
+    credentials: { pin: { type: 'password' } }
+  });
 };
