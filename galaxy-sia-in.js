@@ -116,5 +116,57 @@ function GalaxySIAInNode(config) {
 }
 
 module.exports = function(RED) {
-  RED.nodes.registerType("galaxy-sia-in", GalaxySIAInNode);
+  const parseSia = require('../lib/sia-parser');
+  const siaCRC = parseSia.siaCRC;
+  const pad = parseSia.pad;
+
+  function GalaxySiaInNode(config) {
+    RED.nodes.createNode(this, config);
+    const cfgNode = RED.nodes.getNode(config.config);
+    const node = this;
+    let buffer = '';
+
+    // subscribe to raw data
+    cfgNode.on('data', chunk => {
+      buffer += chunk.toString('ascii');
+      let idx;
+      while ((idx = buffer.indexOf('\r')) >= 0) {
+        const raw = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 1);
+        handleMessage(raw);
+      }
+    });
+
+    function handleMessage(rawStr) {
+      // Handshake
+      const hs = rawStr.match(/^([FD]#?[0-9A-Za-z]+).*$/);
+      if (hs) {
+        cfgNode.socket.write(hs[1], 'ascii');
+        return;
+      }
+
+      const parsed = parseSia.parse(rawStr);
+      if (!parsed) return;
+
+      if (parsed.valid) {
+        // SIA-DC09 ACK
+        const seq = parsed.seq || '00';
+        const rcv = parsed.rcv || 'R0';
+        const lpref = parsed.lpref || 'L0';
+        const func = '\x06';
+        const body = `${seq}${rcv}${lpref}#${cfgNode.account}`;
+        const len = pad((func + body).length, 4);
+        const crc = siaCRC(func + body);
+        const ack = `\r\n${len}${func}${body}${crc}\r\n`;
+        cfgNode.socket.write(ack, 'ascii');
+        node.send(parsed);
+      } else {
+        node.warn(`Invalid CRC for message: ${rawStr}`);
+      }
+    }
+
+    this.on('close', done => done());
+  }
+
+  RED.nodes.registerType('galaxy-sia-in', GalaxySiaInNode);
 };
