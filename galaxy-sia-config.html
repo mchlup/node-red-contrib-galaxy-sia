@@ -3,27 +3,27 @@ RED.nodes.registerType('galaxy-sia-config',{
   category: 'galaxy-sia',
   color: '#a6d7a8',
   defaults: {
-    name:                   {value:""},
-    panelIP:                {value:"", required:true},
-    panelPort:              {value:10002, required:true, validate:RED.validators.number()},
-    account:                {value:"", required:true},
-    siaLevel:               {value:4, validate:RED.validators.number()},
-    encryption:             {value:false},
-    encryptionKey:          {value:""},
-    encryptionHex:          {value:false},
-    discardTestMessages:    {value:false},
-    ackType:                {value:"A_CRLF"},
-    ackCustom:              {value:""},
-    periodicReportInterval: {value:0, validate:RED.validators.number()}
+    name:                   { value:"" },
+    panelIP:                { value:"", required:true },
+    panelPort:              { value:10002, required:true, validate:RED.validators.number() },
+    account:                { value:"", required:true },
+    siaLevel:               { value:4, validate:RED.validators.number() },
+    encryption:             { value:false },
+    encryptionKey:          { value:"" },
+    encryptionHex:          { value:false },
+    discardTestMessages:    { value:false },
+    ackType:                { value:"A_CRLF" },
+    ackCustom:              { value:"" },
+    periodicReportInterval: { value:0, validate:RED.validators.number() }
   },
   credentials: {
-    pin: {type:"password"}
+    pin: { type: "password" }
   },
-  inputs:0,
-  outputs:0,
+  inputs: 0,
+  outputs: 0,
   icon: "font-awesome/fa-cog",
   label: function() {
-    return this.name||this.panelIP;
+    return this.name || this.panelIP;
   }
 });
 </script>
@@ -31,7 +31,7 @@ RED.nodes.registerType('galaxy-sia-config',{
 <script type="text/html" data-template-name="galaxy-sia-config">
   <div class="form-row">
     <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
-    <input type="text" id="node-input-name" placeholder="optional name">
+    <input type="text" id="node-input-name">
   </div>
   <div class="form-row">
     <label for="node-input-panelIP"><i class="fa fa-wifi"></i> Panel IP</label>
@@ -62,7 +62,7 @@ RED.nodes.registerType('galaxy-sia-config',{
     <input type="checkbox" id="node-input-encryptionHex">
   </div>
   <div class="form-row">
-    <label for="node-input-discardTestMessages"><i class="fa fa-filter"></i> Discard 'DUH'</label>
+    <label for="node-input-discardTestMessages"><i class="fa fa-filter"></i> Discard Test Messages</label>
     <input type="checkbox" id="node-input-discardTestMessages">
   </div>
   <div class="form-row">
@@ -73,7 +73,6 @@ RED.nodes.registerType('galaxy-sia-config',{
       <option value="ACK_CRLF">ACK_CRLF</option>
       <option value="ACK">ACK</option>
       <option value="CUSTOM">CUSTOM</option>
-      <option value="SIA_PACKET">SIA_PACKET</option>
     </select>
   </div>
   <div class="form-row">
@@ -87,12 +86,12 @@ RED.nodes.registerType('galaxy-sia-config',{
 </script>
 
 <script type="text/html" data-help-name="galaxy-sia-config">
-  <p>Configuration node for the Galaxy Dimension SIA DC-09 connection.</p>
+  <p>Configuration for Galaxy Dimension SIA DC-09:</p>
   <ul>
-    <li><b>Panel IP/Port</b>: adresy ústředny.</li>
-    <li><b>Account</b>: identifikátor SIA účtu.</li>
-    <li><b>Encryption</b>: povolit AES-128-ECB dešifrování.</li>
-    <li><b>ACK Type</b>: jaká odpověď na handshake se pošle.</li>
-    <li><b>Periodic Report Interval</b>: (volitelné) automatické pollování ústředny každých N sekund.</li>
+    <li><b>Panel IP/Port</b> – adresa a port ústředny.</li>
+    <li><b>Account</b> – SIA účet (např. #1234).</li>
+    <li><b>Encryption</b> – povolí AES-128.</li>
+    <li><b>ACK Type</b> – formát handshake ACK.</li>
+    <li><b>Periodic Report Interval</b> – automatické pollování (0 = vypnuto).</li>
   </ul>
 </script>
