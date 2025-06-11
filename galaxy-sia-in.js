@@ -1,6 +1,7 @@
 /**
+ * galaxy-sia-in.js
+ *
  * Galaxy SIA In Node
- * 
  * Přijímá surová SIA data z konfiguračního uzlu, parsuje je
  * a odpovídá SIA-DC09 kompatibilním ACK paketem.
  */
@@ -15,7 +16,7 @@ module.exports = function(RED) {
     const node    = this;
     let buffer    = '';
 
-    // Přihlásíme se k událostem 'data' z config-uzlu
+    // Přijímáme data z config-uzlu
     cfgNode.on('data', chunk => {
       buffer += chunk.toString('ascii');
       let idx;
@@ -27,7 +28,7 @@ module.exports = function(RED) {
     });
 
     function handleMessage(rawStr) {
-      // Handshake (D#1234 nebo F#1234)
+      // Handshake (D#... / F#...)
       const hs = rawStr.match(/^([FD]#?[0-9A-Za-z]+).*$/);
       if (hs) {
         // prosté echo handshake
@@ -39,15 +40,15 @@ module.exports = function(RED) {
       const parsed = parseSia.parse(rawStr);
       if (!parsed) return;
 
-      // Ignorovat jiné účty
+      // Ignorujeme zprávy pro jiné účty
       if (parsed.account !== cfgNode.account) return;
 
-      // Pokud platné, vytvořit a poslat ACK
       if (parsed.valid) {
+        // SIA-DC09 ACK
         const seq      = parsed.seq   || '00';
         const rcv      = parsed.rcv   || 'R0';
         const lpref    = parsed.lpref || 'L0';
-        const funcChar = '\x06'; // SIA-DC09 ACK kontrolní znak
+        const funcChar = '\x06';  // control-znak ACK
         const body     = `${seq}${rcv}${lpref}#${cfgNode.account}`;
         const len      = pad((funcChar + body).length, 4);
         const crc      = siaCRC(funcChar + body);
@@ -60,7 +61,7 @@ module.exports = function(RED) {
     }
 
     this.on('close', done => {
-      // tady není co speciálně ukončovat
+      // nic dalšího není třeba čistit
       done();
     });
   }
