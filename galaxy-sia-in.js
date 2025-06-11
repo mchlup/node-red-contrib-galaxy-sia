@@ -1,5 +1,7 @@
 const net = require("net");
+const fs = require("fs");
 const parseSIA = require("./lib/sia-parser");
+
 const pad = parseSIA.pad;
 
 const HEARTBEAT_PAYLOAD = "HEARTBEAT";
@@ -40,6 +42,21 @@ function sendAck(socket, ackStr) {
   }
 }
 
+function loadDynamicMapping(path, node) {
+  try {
+    if (!path) return null;
+    if (!fs.existsSync(path)) return null;
+    const content = fs.readFileSync(path, "utf-8");
+    const parsed = JSON.parse(content);
+    // Očekáváno: { zoneMap: {...}, userMap: {...}, areaMap: {...} }
+    if (typeof parsed !== "object") throw new Error("Externí mapování není objekt");
+    return parsed;
+  } catch (e) {
+    if (node) node.warn("Nepodařilo se načíst externí mapování: " + e.message);
+    return null;
+  }
+}
+
 function GalaxySIAInNode(config) {
   RED.nodes.createNode(this, config);
   const cfg = RED.nodes.getNode(config.config);
@@ -77,11 +94,6 @@ function GalaxySIAInNode(config) {
   }
 
   function handleSocket(socket) {
-    if (!cfg || !cfg.account) {
-      node.error("Chybí nebo je neplatná konfigurace Galaxy SIA uzlu!");
-      socket.destroy();
-      return;
-    }
     if (sockets.length >= MAX_CONNECTIONS) {
       socket.destroy();
       node.warn("Překročen maximální počet spojení");
@@ -90,7 +102,7 @@ function GalaxySIAInNode(config) {
     sockets.push(socket);
     setStatus("client connected");
 
-    socket.on("data", function (data) {
+    socket.on("data", function(data) {
       const rawStr = data.toString();
       node.log("RAW SIA MESSAGE: " + rawStr);
 
@@ -114,23 +126,27 @@ function GalaxySIAInNode(config) {
         );
 
         if (cfg.debug) node.debug("SIA PARSED: " + JSON.stringify(parsed));
-        if (parsed.error) node.warn("Parser warning: " + parsed.error);
-
-        if (!parsed.valid) {
-          setStatus("invalid message", "red", "ring");
-          node.send([null, { payload: { error: parsed.error || "invalid", raw: rawStr } }]);
-          return;
-        }
 
         if (parsed.account !== cfg.account) {
           node.warn(`SIA: Ignored message with account ${parsed.account} (expected ${cfg.account})`);
           return;
         }
 
+        // --- DYNAMICKÉ MAPOVÁNÍ ---
+        let zoneMap = cfg.zoneMap, userMap = cfg.userMap, areaMap = cfg.areaMap;
+        if (cfg.externalMappingPath) {
+          const loaded = loadDynamicMapping(cfg.externalMappingPath, node);
+          if (loaded) {
+            zoneMap = loaded.zoneMap || zoneMap;
+            userMap = loaded.userMap || userMap;
+            areaMap = loaded.areaMap || areaMap;
+          }
+        }
+
         // MAPOVÁNÍ ENTIT
-        let zoneName = parsed.zone && cfg.zoneMap ? cfg.zoneMap[parsed.zone] : undefined;
-        let userName = parsed.user && cfg.userMap ? cfg.userMap[parsed.user] : undefined;
-        let areaName = parsed.area && cfg.areaMap ? cfg.areaMap[parsed.area] : undefined;
+        let zoneName = parsed.zone && zoneMap ? zoneMap[parsed.zone] : undefined;
+        let userName = parsed.user && userMap ? userMap[parsed.user] : undefined;
+        let areaName = parsed.area && areaMap ? areaMap[parsed.area] : undefined;
 
         let msgMain = null;
         if (parsed.valid && (!cfg.discardTestMessages || parsed.code !== "DUH")) {
@@ -168,14 +184,14 @@ function GalaxySIAInNode(config) {
     socket.on("error", err => {
       node.error("Socket error: " + err.message);
       setStatus("socket error", "red", "ring");
-      cleanupSockets();
     });
   }
 
   function startServer() {
     if (server) return;
     server = net.createServer(handleSocket);
-    server.on("connection", function (socket) {
+    server.on("connection", function(socket) {
+      // Limit number of connections
       if (sockets.length >= MAX_CONNECTIONS) {
         socket.destroy();
         node.warn("Překročen maximální počet spojení");
@@ -214,6 +230,6 @@ function GalaxySIAInNode(config) {
   });
 }
 
-module.exports = function (RED) {
+module.exports = function(RED) {
   RED.nodes.registerType("galaxy-sia-in", GalaxySIAInNode);
 };
