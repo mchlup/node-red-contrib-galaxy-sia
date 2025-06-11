@@ -26,7 +26,8 @@ RED.nodes.registerType('galaxy-sia-config',{
     heartbeatInterval:      { value:60, required:true, validate:RED.validators.number() },
     zoneMap:                { value:"" },
     userMap:                { value:"" },
-    areaMap:                { value:"" }
+    areaMap:                { value:"" },
+    externalMappingPath:    { value:"" }
   },
   credentials: {
     pin: { type: "password" }
@@ -161,6 +162,11 @@ RED.nodes.registerType('galaxy-sia-config',{
     <label for="node-input-periodicReportInterval"><i class="fa fa-clock-o"></i> Periodic Report Interval (s)</label>
     <input type="number" id="node-input-periodicReportInterval" value="0" min="0">
   </div>
+  <div class="form-row">
+    <label for="node-input-externalMappingPath"><i class="fa fa-external-link"></i> Cesta k externímu mapování (volitelné)</label>
+    <input type="text" id="node-input-externalMappingPath" placeholder="/data/sia-mapping.json">
+    <span class="help-block">Pokud je zadáno, bude mapování zón, uživatelů a oblastí načítáno z tohoto souboru při každé zprávě (viz README).</span>
+  </div>
 </script>
 
 <script type="text/html" data-help-name="galaxy-sia-config">
@@ -171,6 +177,7 @@ RED.nodes.registerType('galaxy-sia-config',{
     <li><b>Číslo účtu</b>: Identifikační číslo účtu na ústředně</li>
     <li><b>ID uživatele</b> a <b>Kód uživatele</b>: Pro vzdálené příkazy</li>
     <li><b>Mapování zón, uživatelů, oblastí</b>: JSON mapování čísel na jména pro lepší čitelnost</li>
+    <li><b>Externí mapování</b>: Pokud je zadáno, bude načítáno dynamicky z externího souboru (JSON) podle cesty</li>
     <li><b>Heartbeat interval</b>: Odesílání heartbeat zpráv pro monitoring spojení</li>
   </ul>
 </script>
