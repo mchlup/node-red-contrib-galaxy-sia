@@ -3,9 +3,9 @@ const parseSIA = require("./lib/sia-parser");
 
 const pad = parseSIA.pad;
 
-// Management spojení a heartbeat
 const HEARTBEAT_PAYLOAD = "HEARTBEAT";
-const HEARTBEAT_INTERVAL_DEFAULT = 60; // v sekundách
+const HEARTBEAT_INTERVAL_DEFAULT = 60; // seconds
+const MAX_CONNECTIONS = 20; // Prevent DoS
 
 function getAckString(cfg, rawStr, node) {
   switch (cfg.ackType) {
@@ -50,12 +50,10 @@ function GalaxySIAInNode(config) {
   let sockets = [];
   let heartbeatTimer = null;
 
-  // Stav spojení
   function setStatus(text, color = "green", shape = "dot") {
     node.status({ fill: color, shape: shape, text: text });
   }
 
-  // Heartbeat odesílání
   function startHeartbeat() {
     stopHeartbeat();
     const interval = Number(cfg.heartbeatInterval) || HEARTBEAT_INTERVAL_DEFAULT;
@@ -80,6 +78,11 @@ function GalaxySIAInNode(config) {
   }
 
   function handleSocket(socket) {
+    if (sockets.length >= MAX_CONNECTIONS) {
+      socket.destroy();
+      node.warn("Překročen maximální počet spojení");
+      return;
+    }
     sockets.push(socket);
     setStatus("client connected");
 
@@ -87,54 +90,63 @@ function GalaxySIAInNode(config) {
       const rawStr = data.toString();
       node.log("RAW SIA MESSAGE: " + rawStr);
 
-      // Handshake detekce
-      const h = rawStr.match(/^([FD]#?[0-9A-Za-z]+)[^\r\n]*/);
-      if (h) {
-        const ackStr = getAckString(cfg, h[1], node);
-        sendAck(socket, ackStr);
-        setStatus("handshake");
-        node.send([{ payload: { type: "handshake", ack: ackStr, raw: rawStr } }, null]);
-        return;
-      }
-
-      const parsed = parseSIA(
-        rawStr,
-        cfg.siaLevel,
-        cfg.encryption,
-        cfg.encryptionKey,
-        cfg.encryptionHex
-      );
-
-      if (cfg.debug) node.debug("SIA PARSED: " + JSON.stringify(parsed));
-
-      if (parsed.account !== cfg.account) {
-        node.warn(`SIA: Ignored message with account ${parsed.account} (expected ${cfg.account})`);
-        return;
-      }
-
-      // MAPOVÁNÍ ENTIT
-      let zoneName = parsed.zone && cfg.zoneMap ? cfg.zoneMap[parsed.zone] : undefined;
-      let userName = parsed.user && cfg.userMap ? cfg.userMap[parsed.user] : undefined;
-      let areaName = parsed.area && cfg.areaMap ? cfg.areaMap[parsed.area] : undefined;
-
-      let msgMain = null;
-      if (parsed.valid && (!cfg.discardTestMessages || parsed.code !== "DUH")) {
-        const ackEv = buildAckPacket(cfg.account, parsed.seq);
-        msgMain = { payload: { ...parsed, ack: ackEv, raw: rawStr, zoneName, userName, areaName } };
-        sendAck(socket, ackEv);
-      }
-
-      const msgDebug = {
-        payload: {
-          raw: rawStr,
-          parsed: parsed,
-          ack: msgMain && msgMain.payload.ack ? msgMain.payload.ack : undefined,
-          zoneName, userName, areaName
+      try {
+        // Handshake detekce
+        const h = rawStr.match(/^([FD]#?[0-9A-Za-z]+)[^\r\n]*/);
+        if (h) {
+          const ackStr = getAckString(cfg, h[1], node);
+          sendAck(socket, ackStr);
+          setStatus("handshake");
+          node.send([{ payload: { type: "handshake", ack: ackStr, raw: rawStr } }, null]);
+          return;
         }
-      };
 
-      setStatus(parsed.valid ? "msg OK" : "invalid");
-      node.send([msgMain, msgDebug]);
+        const parsed = parseSIA(
+          rawStr,
+          cfg.siaLevel,
+          cfg.encryption,
+          cfg.encryptionKey,
+          cfg.encryptionHex
+        );
+
+        if (cfg.debug) node.debug("SIA PARSED: " + JSON.stringify(parsed));
+
+        if (parsed.account !== cfg.account) {
+          node.warn(`SIA: Ignored message with account ${parsed.account} (expected ${cfg.account})`);
+          return;
+        }
+
+        // MAPOVÁNÍ ENTIT
+        let zoneName = parsed.zone && cfg.zoneMap ? cfg.zoneMap[parsed.zone] : undefined;
+        let userName = parsed.user && cfg.userMap ? cfg.userMap[parsed.user] : undefined;
+        let areaName = parsed.area && cfg.areaMap ? cfg.areaMap[parsed.area] : undefined;
+
+        let msgMain = null;
+        if (parsed.valid && (!cfg.discardTestMessages || parsed.code !== "DUH")) {
+          const ackEv = buildAckPacket(cfg.account, parsed.seq);
+          msgMain = { payload: { ...parsed, ack: ackEv, raw: rawStr, zoneName, userName, areaName } };
+          sendAck(socket, ackEv);
+        }
+
+        const msgDebug = {
+          payload: {
+            raw: rawStr,
+            parsed: parsed,
+            ack: msgMain && msgMain.payload.ack ? msgMain.payload.ack : undefined,
+            zoneName, userName, areaName
+          }
+        };
+
+        setStatus(parsed.valid ? "msg OK" : "invalid");
+        node.send([msgMain, msgDebug]);
+      } catch (err) {
+        node.error("Chyba při zpracování zprávy: " + err.message);
+        setStatus("parse error", "red", "ring");
+        node.send([
+          null,
+          { payload: { error: err.message, raw: rawStr } }
+        ]);
+      }
     });
 
     socket.on("close", () => {
@@ -151,6 +163,15 @@ function GalaxySIAInNode(config) {
   function startServer() {
     if (server) return;
     server = net.createServer(handleSocket);
+    server.on("connection", function(socket) {
+      // Limit number of connections
+      if (sockets.length >= MAX_CONNECTIONS) {
+        socket.destroy();
+        node.warn("Překročen maximální počet spojení");
+        return;
+      }
+      handleSocket(socket);
+    });
     server.on("error", err => {
       node.error("Server error: " + err.message);
       setStatus("server error", "red", "dot");
@@ -174,7 +195,7 @@ function GalaxySIAInNode(config) {
     setStatus("stopped", "grey", "ring");
   }
 
-  // Automatické spuštění serveru a reconnect při chybě
+  // Automatic start
   startServer();
 
   this.on("close", done => {
