@@ -1,6 +1,6 @@
 <script type="text/javascript">
 RED.nodes.registerType('galaxy-sia-config',{
-  // Změna kategorie z "galaxy-sia" na "config" zajistí, že uzel půjde do Config Nodes
+  // musí být "config" aby to bylo v Config Nodes sidebaru
   category: 'config',
   color: '#a6d7a8',
   defaults: {
@@ -24,7 +24,7 @@ RED.nodes.registerType('galaxy-sia-config',{
   outputs: 0,
   icon: "font-awesome/fa-cog",
   label: function() {
-    return this.name||this.panelIP;
+    return this.name || this.panelIP;
   }
 });
 </script>
@@ -89,10 +89,10 @@ RED.nodes.registerType('galaxy-sia-config',{
 <script type="text/html" data-help-name="galaxy-sia-config">
   <p>Configuration node for Galaxy Dimension SIA DC-09 connection.</p>
   <ul>
-    <li><b>Panel IP/Port</b>: IP address and port of the panel.</li>
-    <li><b>Account</b>: SIA account number (e.g. 1234).</li>
-    <li><b>Encryption</b>: Enable AES-128-ECB decryption.</li>
-    <li><b>ACK Type</b>: Type of handshake acknowledgment to send.</li>
-    <li><b>Periodic Report Interval</b>: Poll the panel every N seconds (0 = disabled).</li>
+    <li><b>Panel IP/Port</b>: IP and port of the panel.</li>
+    <li><b>Account</b>: SIA account number.</li>
+    <li><b>Encryption</b>: enable AES-128-ECB decryption.</li>
+    <li><b>ACK Type</b>: handshake ACK format.</li>
+    <li><b>Periodic Report Interval</b>: auto-poll every N seconds (0 = off).</li>
   </ul>
 </script>
