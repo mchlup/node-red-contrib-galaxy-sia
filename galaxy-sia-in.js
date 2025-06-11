@@ -11,7 +11,7 @@ module.exports = function(RED) {
 
   function GalaxySiaInNode(config) {
     RED.nodes.createNode(this, config);
-    const cfg  = RED.nodes.getNode(config.config);
+    const cfg = RED.nodes.getNode(config.config); // musí vracet instanci správného typu
     const node = this;
 
     if (!cfg || !cfg.panelPort) {
