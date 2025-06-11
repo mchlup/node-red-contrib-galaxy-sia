@@ -72,10 +72,3 @@ Node-RED SIA DC-09 integration for Honeywell Galaxy Dimension.
 - Vždy validujte JSON mapování v konfiguračním node.
 
 ---
-
-## Přispění
-
-- Pull-requesty s novými protokoly, vylepšeními mapování, testy nebo integrací MQTT/webhook vítány!
-- Pro návrhy a nahlášení chyb použijte Issues na GitHubu.
-
----
