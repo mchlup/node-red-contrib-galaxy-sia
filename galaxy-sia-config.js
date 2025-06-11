@@ -21,13 +21,8 @@ module.exports = function(RED) {
     this.periodicReportInterval = Number(n.periodicReportInterval) || 0;
     this.discardTestMessages = n.discardTestMessages === true || n.discardTestMessages === "true";
     this.deviceList = n.deviceList || "";
-
-    // ACK handshake – defaultně echo bez CRLF
-    this.ackType = n.ackType || "ECHO_TRIM_END";
+    this.ackType = n.ackType || "A_CRLF";
     this.ackCustom = n.ackCustom || "";
-
-    // *** NOVĚ: debug flag ***
-    this.debug = n.debug === true || n.debug === "true";
   }
 
   RED.nodes.registerType("galaxy-sia-config", GalaxySIAConfigNode);
