@@ -1,38 +1,39 @@
+/**
+ * Galaxy SIA Out Node
+ * Connects to the panel and sends SIA DC-09 commands built by sia-command.
+ */
 module.exports = function(RED) {
-  const net = require("net");
-  const buildCommand = require("./lib/sia-command");
+  const net     = require("net");
+  const siaCmd  = require("./lib/sia-command");
 
-  function GalaxySIAOutNode(config) {
+  function GalaxySiaOutNode(config) {
     RED.nodes.createNode(this, config);
-    this.configNode = RED.nodes.getNode(config.config);
-    const cfg = this.configNode;
+    const cfg  = RED.nodes.getNode(config.config);
     const node = this;
     let client = null;
 
+    // Ensure TCP connection to panel
     function ensureConnection(cb) {
       if (client && !client.destroyed) return cb();
       client = net.connect(cfg.panelPort, cfg.panelIP, cb);
+      client.on("error", err => node.error("Connection error: "+err.message));
     }
 
     this.on("input", msg => {
-      const c = msg.payload.command;
-      const group = msg.payload.group;
+      if (!cfg) {
+        node.error("Missing config node");
+        return;
+      }
       ensureConnection(() => {
-        const cmd = buildCommand(cfg.account, c, group, cfg.encryption, cfg.encryptionKey, cfg.encryptionHex);
-        client.write(cmd + "\r\n");
-
-        // Debug výstup – vše co bylo odesláno
-        const msgDebug = {
-          payload: {
-            type: 'out',
-            timestamp: new Date().toISOString(),
-            remoteAddress: cfg.panelIP,
-            raw: cmd
-          }
-        };
-
-        // V hlavním výstupu nemusíš posílat nic, nebo potvrzení
-        node.send([null, msgDebug]);
+        const cmdName = msg.command;
+        const params  = msg.params || [];
+        if (!siaCmd[cmdName]) {
+          node.error("Unknown command: "+cmdName);
+          return;
+        }
+        const cmd = siaCmd[cmdName](cfg.account, ...params);
+        client.write(cmd, "ascii");
+        node.send({ payload: cmd });
       });
     });
 
@@ -41,5 +42,6 @@ module.exports = function(RED) {
       else done();
     });
   }
-  RED.nodes.registerType("galaxy-sia-out", GalaxySIAOutNode);
+
+  RED.nodes.registerType("galaxy-sia-out", GalaxySiaOutNode);
 };
