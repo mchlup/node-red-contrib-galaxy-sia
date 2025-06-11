@@ -13,7 +13,13 @@ RED.nodes.registerType('galaxy-sia-config',{
     encryptionHex:          { value:false },
     discardTestMessages:    { value:false },
     ackType:                { value:"A_CRLF" },
-    ackCustom:              { value:"" },
+    ackCustom: { 
+      value: "", 
+      validate: function(v) { 
+        // Validace: pokud je vybrán CUSTOM, musí být ackCustom neprázdné
+        return (this.ackType === "CUSTOM") ? v.trim().length > 0 : true; 
+      }
+    },
     periodicReportInterval: { value:0, required:true, validate:RED.validators.number() },
     userId:                 { value:"" },
     userCode:               { value:"" },
@@ -35,6 +41,13 @@ RED.nodes.registerType('galaxy-sia-config',{
     $("#node-input-panelPort").spinner({
       min:1,
       max:65535
+    });
+    $("#node-config-input-ackType").on("change", function() {
+      if ($(this).val() === "CUSTOM") {
+        $("#ack-custom-row").show();
+      } else {
+        $("#ack-custom-row").hide();
+      }
     });
   },
   oneditsave: function() {
@@ -58,6 +71,7 @@ RED.nodes.registerType('galaxy-sia-config',{
     if (areaVal) {
       try { JSON.parse(areaVal); } catch(e) { alert("Neplatný JSON v mapování oblastí!"); return false; }
     }
+    // ackCustom validace probíhá už v defaults.validate
     return true;
   }
 });
@@ -123,15 +137,6 @@ RED.nodes.registerType('galaxy-sia-config',{
     <input type="text" id="node-config-input-ackCustom" placeholder="např. OK\r\n">
     <span class="help-block">Použije se pouze pokud je vybrán typ ACK "Vlastní odpověď".</span>
   </div>
-  <script>
-    $("#node-config-input-ackType").on("change", function() {
-      if ($(this).val() === "CUSTOM") {
-        $("#ack-custom-row").show();
-      } else {
-        $("#ack-custom-row").hide();
-      }
-    });
-  </script>
   <div class="form-row">
     <label for="node-config-input-heartbeatInterval"><i class="fa fa-heartbeat"></i> Heartbeat interval (s)</label>
     <input type="number" id="node-config-input-heartbeatInterval" min="0" max="3600" value="60">
@@ -139,17 +144,17 @@ RED.nodes.registerType('galaxy-sia-config',{
   </div>
   <div class="form-row">
     <label for="node-config-input-zoneMap"><i class="fa fa-list"></i> Mapování zón (JSON)</label>
-    <textarea id="node-config-input-zoneMap" rows="2" placeholder='{"1": "Sklad", "2": "Kancelář"}'></textarea>
+    <textarea id="node-input-zoneMap" rows="2" placeholder='{"1": "Sklad", "2": "Kancelář"}'></textarea>
     <span class="help-block">Zadejte mapování čísel zón na názvy (ve formátu JSON). Např. {"1":"Sklad","2":"Kancelář"}</span>
   </div>
   <div class="form-row">
     <label for="node-config-input-userMap"><i class="fa fa-users"></i> Mapování uživatelů (JSON)</label>
-    <textarea id="node-config-input-userMap" rows="2" placeholder='{"007": "Petr Novák"}'></textarea>
+    <textarea id="node-input-userMap" rows="2" placeholder='{"007": "Petr Novák"}'></textarea>
     <span class="help-block">Zadejte mapování ID uživatelů na jména (ve formátu JSON).</span>
   </div>
   <div class="form-row">
     <label for="node-config-input-areaMap"><i class="fa fa-th-large"></i> Mapování oblastí (JSON)</label>
-    <textarea id="node-config-input-areaMap" rows="2" placeholder='{"1": "Hala"}'></textarea>
+    <textarea id="node-input-areaMap" rows="2" placeholder='{"1": "Hala"}'></textarea>
     <span class="help-block">Zadejte mapování čísel oblastí na názvy (ve formátu JSON).</span>
   </div>
   <div class="form-row">
