@@ -3,7 +3,14 @@
   "version": "0.1.3",
   "description": "Node-RED SIA DC-09 integration for Honeywell Galaxy Dimension panels",
   "main": "galaxy-sia-in.js",
-  "keywords": ["node-red", "galaxy", "sia", "dc-09", "alarm", "honeywell"],
+  "keywords": [
+    "node-red",
+    "galaxy",
+    "sia",
+    "dc-09",
+    "alarm",
+    "honeywell"
+  ],
   "node-red": {
     "nodes": {
       "galaxy-sia-config": "galaxy-sia-config.js",
