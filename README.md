@@ -21,7 +21,7 @@ Node-RED SIA DC-09 integration for Honeywell Galaxy Dimension.
 
 ### 2. Vstupní uzel `galaxy-sia-in`
 
-![Vstupní uzel galaxy-sia-in v Node-RED]('docs/assets/file_00000000318061f4af8edd47eecd7092 (1).png')
+![Vstupní uzel galaxy-sia-in v Node-RED](docs/file_0000000094cc620a976a4f5801902975.png)
 
 - Tento node přijímá zprávy z panelu Galaxy Dimension (TCP server).
 - **Vstupy**: Nemá vstup (je pouze receiver).
