@@ -7,8 +7,8 @@ module.exports = function(RED) {
   function GalaxySiaConfigNode(config) {
     RED.nodes.createNode(this, config);
     const node = this;
-    node.ip = config.ip;
-    node.port = config.port;
+    node.ip = config.panelIP;
+    node.port = Number(config.panelPort);
     node.account = config.account;
     node.reconnectDelay = 1000;
 
