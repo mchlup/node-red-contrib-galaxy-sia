@@ -1,29 +1,23 @@
-// Node-RED konfigurační node pro Galaxy SIA DC-09
+/**
+ * Galaxy SIA Config Node with basic settings (no socket here).
+ */
 module.exports = function(RED) {
-  function GalaxySIAConfigNode(n) {
-    RED.nodes.createNode(this, n);
+  function GalaxySiaConfigNode(config) {
+    RED.nodes.createNode(this, config);
 
-    // Základní parametry
-    this.account = n.account || "";
-    this.panelIP = n.panelIP || "";
-    this.panelPort = Number(n.panelPort) || 10002;
-    this.siaLevel = Number(n.siaLevel) || 4;
-
-    // Šifrování
-    // Podporuje jak string, tak HEX (pro AES-128)
-    this.encryption = n.encryption === true || n.encryption === "true";
-    this.encryptionKey = n.encryptionKey || "";
-    this.encryptionHex = n.encryptionHex === true || n.encryptionHex === "true";
-
-    // Další volby
-    this.connectOnDemand = n.connectOnDemand === true || n.connectOnDemand === "true";
-    this.heartbeatInterval = Number(n.heartbeatInterval) || 60;
-    this.periodicReportInterval = Number(n.periodicReportInterval) || 0;
-    this.discardTestMessages = n.discardTestMessages === true || n.discardTestMessages === "true";
-    this.deviceList = n.deviceList || "";
-    this.ackType = n.ackType || "A_CRLF";
-    this.ackCustom = n.ackCustom || "";
+    this.panelIP                = config.panelIP;
+    this.panelPort              = Number(config.panelPort) || 10002;
+    this.account                = config.account;
+    this.siaLevel               = Number(config.siaLevel) || 4;
+    this.encryption             = !!config.encryption;
+    this.encryptionKey          = config.encryptionKey || "";
+    this.encryptionHex          = !!config.encryptionHex;
+    this.discardTestMessages    = !!config.discardTestMessages;
+    this.ackType                = config.ackType || "A_CRLF";
+    this.ackCustom              = config.ackCustom || "";
   }
 
-  RED.nodes.registerType("galaxy-sia-config", GalaxySIAConfigNode);
+  RED.nodes.registerType("galaxy-sia-config", GalaxySiaConfigNode, {
+    credentials: { pin: { type: "password" } }
+  });
 };
