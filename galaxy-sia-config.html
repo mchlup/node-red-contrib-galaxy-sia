@@ -24,7 +24,23 @@ RED.nodes.registerType('galaxy-sia-config',{
   icon: "font-awesome/fa-cog",
   label: function() {
     return this.name || this.panelIP || "galaxy-sia-config";
-  }
+  },
+  oneditprepare: function() {
+        $("#node-input-panelPort").spinner({
+            min:1,
+            max:65535
+        });
+    },
+    oneditsave: function() {
+        // Validate required fields
+        if (!$("#node-input-panelIP").val()) {
+            return false;
+        }
+        if (!$("#node-input-account").val()) {
+            return false;
+        }
+        return true;
+    }
 });
 </script>
 
