@@ -1,6 +1,5 @@
 const net = require("net");
 const parseSIA = require("./lib/sia-parser");
-
 const pad = parseSIA.pad;
 
 const HEARTBEAT_PAYLOAD = "HEARTBEAT";
@@ -78,6 +77,11 @@ function GalaxySIAInNode(config) {
   }
 
   function handleSocket(socket) {
+    if (!cfg || !cfg.account) {
+      node.error("Chybí nebo je neplatná konfigurace Galaxy SIA uzlu!");
+      socket.destroy();
+      return;
+    }
     if (sockets.length >= MAX_CONNECTIONS) {
       socket.destroy();
       node.warn("Překročen maximální počet spojení");
@@ -86,7 +90,7 @@ function GalaxySIAInNode(config) {
     sockets.push(socket);
     setStatus("client connected");
 
-    socket.on("data", function(data) {
+    socket.on("data", function (data) {
       const rawStr = data.toString();
       node.log("RAW SIA MESSAGE: " + rawStr);
 
@@ -110,6 +114,13 @@ function GalaxySIAInNode(config) {
         );
 
         if (cfg.debug) node.debug("SIA PARSED: " + JSON.stringify(parsed));
+        if (parsed.error) node.warn("Parser warning: " + parsed.error);
+
+        if (!parsed.valid) {
+          setStatus("invalid message", "red", "ring");
+          node.send([null, { payload: { error: parsed.error || "invalid", raw: rawStr } }]);
+          return;
+        }
 
         if (parsed.account !== cfg.account) {
           node.warn(`SIA: Ignored message with account ${parsed.account} (expected ${cfg.account})`);
@@ -157,14 +168,14 @@ function GalaxySIAInNode(config) {
     socket.on("error", err => {
       node.error("Socket error: " + err.message);
       setStatus("socket error", "red", "ring");
+      cleanupSockets();
     });
   }
 
   function startServer() {
     if (server) return;
     server = net.createServer(handleSocket);
-    server.on("connection", function(socket) {
-      // Limit number of connections
+    server.on("connection", function (socket) {
       if (sockets.length >= MAX_CONNECTIONS) {
         socket.destroy();
         node.warn("Překročen maximální počet spojení");
@@ -203,6 +214,6 @@ function GalaxySIAInNode(config) {
   });
 }
 
-module.exports = function(RED) {
+module.exports = function (RED) {
   RED.nodes.registerType("galaxy-sia-in", GalaxySIAInNode);
 };
