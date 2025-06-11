@@ -58,43 +58,71 @@ RED.nodes.registerType('galaxy-sia-config',{
     <input type="number" id="node-input-panelPort" value="10002" min="1" max="65535">
   </div>
   <div class="form-row">
-    <label for="node-input-account"><i class="fa fa-hashtag"></i> Account</label>
-    <input type="text" id="node-input-account">
-  </div>
-  <div class="form-row">
-    <label for="node-input-siaLevel"><i class="fa fa-signal"></i> SIA Level</label>
-    <input type="number" id="node-input-siaLevel" value="4" min="1" max="4">
-  </div>
-  <div class="form-row">
-    <label for="node-input-encryption"><i class="fa fa-lock"></i> Encryption</label>
-    <input type="checkbox" id="node-input-encryption">
-  </div>
-  <div class="form-row">
-    <label for="node-input-encryptionKey"><i class="fa fa-key"></i> Encryption Key</label>
-    <input type="text" id="node-input-encryptionKey">
-  </div>
-  <div class="form-row">
-    <label for="node-input-encryptionHex"><i class="fa fa-code"></i> Key is Hex</label>
-    <input type="checkbox" id="node-input-encryptionHex">
-  </div>
-  <div class="form-row">
-    <label for="node-input-discardTestMessages"><i class="fa fa-filter"></i> Discard Test Messages</label>
-    <input type="checkbox" id="node-input-discardTestMessages">
-  </div>
-  <div class="form-row">
-    <label for="node-input-ackType"><i class="fa fa-reply"></i> ACK Type</label>
-    <select id="node-input-ackType">
-      <option value="A_CRLF">A_CRLF</option>
-      <option value="A">A</option>
-      <option value="ACK_CRLF">ACK_CRLF</option>
-      <option value="ACK">ACK</option>
-      <option value="CUSTOM">CUSTOM</option>
-    </select>
-  </div>
-  <div class="form-row">
-    <label for="node-input-ackCustom"><i class="fa fa-pencil"></i> Custom ACK</label>
-    <input type="text" id="node-input-ackCustom">
-  </div>
+  <label for="node-config-input-account"><i class="fa fa-building"></i> Číslo účtu</label>
+  <input type="text" id="node-config-input-account" placeholder="např. 1234" required>
+  <span class="help-block">Číslo účtu pro komunikaci s ústřednou Galaxy Dimension.</span>
+</div>
+<div class="form-row">
+  <label for="node-config-input-userId"><i class="fa fa-user"></i> ID uživatele</label>
+  <input type="text" id="node-config-input-userId" placeholder="např. 007">
+  <span class="help-block">Číslo uživatele z Galaxy Dimension (pro vzdálené ovládání/příkazy).</span>
+</div>
+<div class="form-row">
+  <label for="node-config-input-userCode"><i class="fa fa-key"></i> Kód uživatele (PIN)</label>
+  <input type="password" id="node-config-input-userCode" placeholder="např. 1234">
+  <span class="help-block">PIN uživatele uložený v Galaxy Dimension (bude použit pro autorizaci příkazů).</span>
+</div>
+<div class="form-row">
+  <label for="node-config-input-panelPort"><i class="fa fa-plug"></i> Panel port</label>
+  <input type="number" id="node-config-input-panelPort" min="1" max="65535" required data-i18n="[placeholder]galaxy-sia-config.placeholder_panelPort">
+  <span class="help-block">TCP port, na kterém bude Node-RED naslouchat (např. 10002)</span>
+</div>
+<div class="form-row">
+  <label for="node-config-input-siaLevel"><i class="fa fa-list-ol"></i> SIA úroveň</label>
+  <select id="node-config-input-siaLevel">
+    <option value="0">0 (Basic)</option>
+    <option value="1">1</option>
+    <option value="2">2 (Text)</option>
+    <option value="3">3</option>
+    <option value="4" selected>4 (Control)</option>
+  </select>
+  <span class="help-block">Standardní je úroveň 4 pro Galaxy Dimension.</span>
+</div>
+<div class="form-row">
+  <label for="node-config-input-ackType"><i class="fa fa-reply"></i> Typ ACK odpovědi</label>
+  <select id="node-config-input-ackType">
+    <option value="A_CRLF">A + CRLF ("A\r\n")</option>
+    <option value="A">A (jen symbol)</option>
+    <option value="ACK_CRLF">ACK + CRLF ("ACK\r\n")</option>
+    <option value="ACK">ACK (jen text)</option>
+    <option value="ECHO">Echo původní zprávy</option>
+    <option value="ECHO_TRIM_END" selected>Echo (bez posledního znaku)</option>
+    <option value="ECHO_STRIP_NONPRINT">Echo (odstranit netisknutelné na konci)</option>
+    <option value="ECHO_TRIM_BOTH">Echo (trim start i end)</option>
+    <option value="SIA_PACKET">SIA DC-09 ACK packet</option>
+    <option value="CUSTOM">Vlastní odpověď</option>
+  </select>
+  <span class="help-block">Vyberte odpovídající typ ACK pro vaše zařízení. Pro Galaxy Dimension doporučujeme "SIA_PACKET".</span>
+</div>
+<div class="form-row" id="ack-custom-row" style="display:none;">
+  <label for="node-config-input-ackCustom"><i class="fa fa-pencil"></i> Vlastní ACK</label>
+  <input type="text" id="node-config-input-ackCustom" placeholder="např. OK\r\n">
+  <span class="help-block">Použije se pouze pokud je vybrán typ ACK "Vlastní odpověď".</span>
+</div>
+<script>
+  $("#node-config-input-ackType").on("change", function() {
+    if ($(this).val() === "CUSTOM") {
+      $("#ack-custom-row").show();
+    } else {
+      $("#ack-custom-row").hide();
+    }
+  });
+</script>
+<div class="form-row">
+  <label for="node-config-input-heartbeatInterval"><i class="fa fa-heartbeat"></i> Heartbeat interval (s)</label>
+  <input type="number" id="node-config-input-heartbeatInterval" min="0" max="3600" value="60">
+  <span class="help-block">Interval pro odesílání heartbeat zpráv všem připojeným klientům (0 = vypnuto).</span>
+</div>
   <div class="form-row">
     <label for="node-input-periodicReportInterval"><i class="fa fa-clock-o"></i> Periodic Report Interval (s)</label>
     <input type="number" id="node-input-periodicReportInterval" value="0" min="0">
