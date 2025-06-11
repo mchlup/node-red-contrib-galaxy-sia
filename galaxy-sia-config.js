@@ -19,8 +19,12 @@ module.exports = function(RED) {
     this.periodicReportInterval = Number(config.periodicReportInterval) || 0;
     this.pin = this.credentials.pin;
     
-    // Add status object
-    this.status = {};
+    // Initialize status
+    this.status = {
+        fill: "green",
+        shape: "dot",
+        text: "ready"
+    };
     
     // Initialize the socket property
     this.socket = null;
