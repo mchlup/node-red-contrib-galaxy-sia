@@ -86,6 +86,7 @@ function GalaxySIAInNode(config) {
 
       if (cfg.debug) node.debug("SIA RAW: " + rawStr);
 
+      // Handshake detekce
       const h = rawStr.match(/^([FD]#?[0-9A-Za-z]+)[^\r\n]*/);
       if (h) {
         const ackStr = getAckString(cfg, h[1]);
@@ -110,10 +111,15 @@ function GalaxySIAInNode(config) {
         return;
       }
 
+      // MAPOVÁNÍ ENTIT
+      let zoneName = parsed.zone && cfg.zoneMap ? cfg.zoneMap[parsed.zone] : undefined;
+      let userName = parsed.user && cfg.userMap ? cfg.userMap[parsed.user] : undefined;
+      let areaName = parsed.area && cfg.areaMap ? cfg.areaMap[parsed.area] : undefined;
+
       let msgMain = null;
       if (parsed.valid && (!cfg.discardTestMessages || parsed.code !== "DUH")) {
         const ackEv = buildAckPacket(cfg.account, parsed.seq);
-        msgMain = { payload: { ...parsed, ack: ackEv, raw: rawStr } };
+        msgMain = { payload: { ...parsed, ack: ackEv, raw: rawStr, zoneName, userName, areaName } };
         sendAck(socket, ackEv);
       }
 
@@ -121,7 +127,8 @@ function GalaxySIAInNode(config) {
         payload: {
           raw: rawStr,
           parsed: parsed,
-          ack: msgMain && msgMain.payload.ack ? msgMain.payload.ack : undefined
+          ack: msgMain && msgMain.payload.ack ? msgMain.payload.ack : undefined,
+          zoneName, userName, areaName
         }
       };
 
