@@ -1,5 +1,5 @@
 /**
- * Galaxy SIA Config Node – funkční konfigurace odpovídající HTML šabloně
+ * Galaxy SIA Config Node – odpovídá výše uvedenému HTML
  */
 module.exports = function(RED) {
   function GalaxySiaConfigNode(config) {
@@ -18,7 +18,6 @@ module.exports = function(RED) {
     this.ackCustom              = config.ackCustom || "";
     this.periodicReportInterval = Number(config.periodicReportInterval) || 0;
 
-    // PIN uložený jako credentials
     this.pin = this.credentials.pin;
   }
 
