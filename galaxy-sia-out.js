@@ -1,5 +1,5 @@
 module.exports = function(RED) {
-  const siaCmd = require('../lib/sia-command');
+  const siaCmd = require('./lib/sia-command');
 
   function GalaxySiaOutNode(config) {
     RED.nodes.createNode(this, config);
