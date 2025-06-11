@@ -1,42 +1,35 @@
-/**
- * Galaxy SIA Config Node – odpovídá výše uvedenému HTML
- */
+// Node-RED konfigurační node pro Galaxy SIA DC-09
 module.exports = function(RED) {
-  function GalaxySiaConfigNode(config) {
-    RED.nodes.createNode(this, config);
+  function GalaxySIAConfigNode(n) {
+    RED.nodes.createNode(this, n);
 
-    this.name = config.name;
-    this.panelIP = config.panelIP;
-    this.panelPort = Number(config.panelPort) || 10002;
-    this.account = config.account;
-    this.siaLevel = Number(config.siaLevel) || 4;
-    this.encryption = !!config.encryption;
-    this.encryptionKey = config.encryptionKey || "";
-    this.encryptionHex = !!config.encryptionHex;
-    this.discardTestMessages = !!config.discardTestMessages;
-    this.ackType = config.ackType || "A_CRLF";
-    this.ackCustom = config.ackCustom || "";
-    this.periodicReportInterval = Number(config.periodicReportInterval) || 0;
-    this.pin = this.credentials.pin;
-    
-    // Initialize status
-    this.status = {
-        fill: "green",
-        shape: "dot",
-        text: "ready"
-    };
-    
-    // Initialize the socket property
-    this.socket = null;
-}
+    // Základní parametry
+    this.account = n.account || "";
+    this.userId = n.userId || "";
+    this.userCode = n.userCode || "";
+    this.panelIP = n.panelIP || "";
+    this.panelPort = Number(n.panelPort) || 10002;
+    this.siaLevel = Number(n.siaLevel) || 4;
 
-  RED.nodes.registerType(
-    "galaxy-sia-config",
-    GalaxySiaConfigNode,
-    {
-      credentials: {
-        pin: { type: "password" }
-      }
-    }
-  );
+    // Šifrování
+    this.encryption = n.encryption === true || n.encryption === "true";
+    this.encryptionKey = n.encryptionKey || "";
+    this.encryptionHex = n.encryptionHex === true || n.encryptionHex === "true";
+
+    // Další volby
+    this.connectOnDemand = n.connectOnDemand === true || n.connectOnDemand === "true";
+    this.heartbeatInterval = Number(n.heartbeatInterval) || 60;
+    this.periodicReportInterval = Number(n.periodicReportInterval) || 0;
+    this.discardTestMessages = n.discardTestMessages === true || n.discardTestMessages === "true";
+    this.deviceList = n.deviceList || "";
+
+    // ACK handshake – defaultně echo bez CRLF
+    this.ackType = n.ackType || "ECHO_TRIM_END";
+    this.ackCustom = n.ackCustom || "";
+
+    // Nově: debug flag
+    this.debug = n.debug === true || n.debug === "true";
+  }
+
+  RED.nodes.registerType("galaxy-sia-config", GalaxySIAConfigNode);
 };
