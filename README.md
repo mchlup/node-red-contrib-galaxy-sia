@@ -33,7 +33,7 @@ Node-RED SIA DC-09 integration for Honeywell Galaxy Dimension.
 
 ### 3. Typické schéma v Node-RED
 
-![Ukázkový flow v Node-RED](docs/assets/file_000000002b2861f4be10c0bdd4410466 (1).png)
+![Ukázkový flow v Node-RED](docs/file_000000002b2861f4be10c0bdd4410466.png)
 
 - `galaxy-sia-config` je připojen ke všem instancím `galaxy-sia-in`.
 - Výstup z `galaxy-sia-in` můžete napojit například na:
