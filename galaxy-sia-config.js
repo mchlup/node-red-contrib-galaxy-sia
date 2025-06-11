@@ -11,6 +11,9 @@ module.exports = function(RED) {
     this.panelPort = Number(n.panelPort) || 10002;
     this.siaLevel = Number(n.siaLevel) || 4;
 
+    // Dynamické načítání mapování
+    this.externalMappingPath = n.externalMappingPath || "";
+
     // Mapování entit (parse JSON, pokud je validní)
     try { this.zoneMap = n.zoneMap ? JSON.parse(n.zoneMap) : {}; } catch(e) { this.zoneMap = {}; }
     try { this.userMap = n.userMap ? JSON.parse(n.userMap) : {}; } catch(e) { this.userMap = {}; }
