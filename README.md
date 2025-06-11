@@ -50,7 +50,7 @@ Node-RED SIA DC-09 integration for Honeywell Galaxy Dimension.
 ![Formulář konfigurace](docs/galaxy-sia-config-dialog.png)
 
 **Vstupní node a výstupy:**
-![Výstupy galaxy-sia-in](docs/galaxy-sia-in-outputs.png)
+![Výstupy galaxy-sia-in](docs/sia-example-flow.png)
 
 ---
 
