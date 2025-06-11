@@ -12,9 +12,9 @@ module.exports = function(RED) {
         node.error('Not connected');
         return;
       }
-      // msg.command musí být validní klíč v siaCmd
+
       if (siaCmd[msg.command]) {
-        const cmdStr = siaCmd[msg.command](cfgNode.account, ...(msg.params||[]));
+        const cmdStr = siaCmd[msg.command](cfgNode.account, ...(msg.params || []));
         socket.write(cmdStr, 'ascii');
         node.log(`Sent ${msg.command}`);
       } else {

@@ -118,7 +118,6 @@ function GalaxySIAInNode(config) {
 module.exports = function(RED) {
   const parseSia = require('../lib/sia-parser');
   const siaCRC = parseSia.siaCRC;
-  const pad = parseSia.pad;
 
   function GalaxySiaInNode(config) {
     RED.nodes.createNode(this, config);
