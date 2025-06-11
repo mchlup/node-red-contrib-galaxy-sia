@@ -7,7 +7,7 @@ const pad = parseSIA.pad;
 const HEARTBEAT_PAYLOAD = "HEARTBEAT";
 const HEARTBEAT_INTERVAL_DEFAULT = 60; // v sekundách
 
-function getAckString(cfg, rawStr) {
+function getAckString(cfg, rawStr, node) {
   switch (cfg.ackType) {
     case "A_CRLF":              return "A\r\n";
     case "A":                   return "A";
@@ -19,8 +19,10 @@ function getAckString(cfg, rawStr) {
     case "ECHO_TRIM_BOTH":      return rawStr.trim();
     case "CUSTOM":              return cfg.ackCustom || "";
     case "SIA_PACKET":
-    default:
       return buildAckPacket(cfg.account);
+    default:
+      if (node) node.warn("Unknown ackType: " + cfg.ackType + ", using 'A\\r\\n'");
+      return "A\r\n";
   }
 }
 
@@ -81,15 +83,14 @@ function GalaxySIAInNode(config) {
     sockets.push(socket);
     setStatus("client connected");
 
-    socket.on("data", raw => {
-      const rawStr = raw.toString();
-
-      if (cfg.debug) node.debug("SIA RAW: " + rawStr);
+    socket.on("data", function(data) {
+      const rawStr = data.toString();
+      node.log("RAW SIA MESSAGE: " + rawStr);
 
       // Handshake detekce
       const h = rawStr.match(/^([FD]#?[0-9A-Za-z]+)[^\r\n]*/);
       if (h) {
-        const ackStr = getAckString(cfg, h[1]);
+        const ackStr = getAckString(cfg, h[1], node);
         sendAck(socket, ackStr);
         setStatus("handshake");
         node.send([{ payload: { type: "handshake", ack: ackStr, raw: rawStr } }, null]);
@@ -107,7 +108,7 @@ function GalaxySIAInNode(config) {
       if (cfg.debug) node.debug("SIA PARSED: " + JSON.stringify(parsed));
 
       if (parsed.account !== cfg.account) {
-        node.warn(`SIA: Ignored message with account ${parsed.account}`);
+        node.warn(`SIA: Ignored message with account ${parsed.account} (expected ${cfg.account})`);
         return;
       }
 
