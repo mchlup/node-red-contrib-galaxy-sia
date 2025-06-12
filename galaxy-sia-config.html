@@ -1,175 +1,240 @@
 <script type="text/javascript">
 RED.nodes.registerType('galaxy-sia-config',{
-  category: 'config',
-  color: '#a6d7a8',
-  defaults: {
-    name:                   { value:"" },
-    panelIP:                { value:"", required:true },
-    panelPort:              { value:10002, required:true, validate:RED.validators.number() },
-    account:                { value:"", required:true },
-    siaLevel:               { value:4, required:true, validate:RED.validators.number() },
-    encryption:             { value:false },
-    encryptionKey:          { value:"" },
-    encryptionHex:          { value:false },
-    discardTestMessages:    { value:false },
-    ackType:                { value:"A_CRLF" },
-    ackCustom: { 
-      value: "", 
-      validate: function(v) { 
-        return (this.ackType === "CUSTOM") ? v.trim().length > 0 : true; 
-      }
+    category: 'config',
+    color: '#a6d7a8',
+    defaults: {
+        name:                   { value:"" },
+        panelIP:               { value:"", required:true },
+        panelPort:             { value:10002, required:true, validate:RED.validators.number() },
+        account:               { value:"", required:true },
+        siaLevel:              { value:4, required:true, validate:RED.validators.number() },
+        encryption:            { value:false },
+        encryptionKey:         { value:"" },
+        encryptionHex:         { value:false },
+        discardTestMessages:   { value:false },
+        ackType:               { value:"A_CRLF" },
+        ackCustom: { 
+            value: "", 
+            validate: function(v) { 
+                return (this.ackType === "CUSTOM") ? v.trim().length > 0 : true; 
+            }
+        },
+        periodicReportInterval: { value:0, required:true, validate:RED.validators.number() },
+        userId:                { value:"" },
+        userCode:              { value:"" },
+        heartbeatInterval:     { value:60, required:true, validate:RED.validators.number() },
+        zoneMap:               { value:"" },
+        userMap:               { value:"" },
+        areaMap:               { value:"" },
+        externalMappingPath:   { value:"" },
+        debug:                 { value:false }
     },
-    periodicReportInterval: { value:0, required:true, validate:RED.validators.number() },
-    userId:                 { value:"" },
-    userCode:               { value:"" },
-    heartbeatInterval:      { value:60, required:true, validate:RED.validators.number() },
-    zoneMap:                { value:"" },
-    userMap:                { value:"" },
-    areaMap:                { value:"" },
-    externalMappingPath:    { value:"" }
-  },
-  credentials: {
-    pin: { type: "password" }
-  },
-  inputs: 0,
-  outputs: 0,
-  icon: "font-awesome/fa-cog",
-  label: function() {
-    return this.name || this.panelIP || "galaxy-sia-config";
-  },
-  oneditprepare: function() {
-    $("#node-input-panelPort").spinner({
-      min:1,
-      max:65535
-    });
-    $("#node-input-ackType").on("change", function() {
-      if ($(this).val() === "CUSTOM") {
-        $("#ack-custom-row").show();
-      } else {
-        $("#ack-custom-row").hide();
-      }
-    }).trigger("change");
-    // Checkbox synchronizace
-    $("#node-input-encryptionHex").prop("checked", $("#node-input-encryptionHex").val());
-    $("#node-input-discardTestMessages").prop("checked", $("#node-input-discardTestMessages").val());
-    $("#node-input-encryption").prop("checked", $("#node-input-encryption").val());
-  },
-  oneditsave: function() {
-    if (!$("#node-input-panelIP").val()) {
-      alert("Vyplňte IP panelu.");
-      return false;
+    credentials: {
+        pin: { type: "password" }
+    },
+    inputs: 0,
+    outputs: 0,
+    icon: "font-awesome/fa-cog",
+    label: function() {
+        return this.name || this.panelIP || "galaxy-sia-config";
+    },
+    oneditprepare: function() {
+        $("#node-input-panelPort").spinner({
+            min:1,
+            max:65535
+        });
+        
+        $("#node-input-ackType").on("change", function() {
+            if ($(this).val() === "CUSTOM") {
+                $("#ack-custom-row").show();
+            } else {
+                $("#ack-custom-row").hide();
+            }
+        }).trigger("change");
+
+        // Inicializace spinnerů pro číselné hodnoty
+        $("#node-input-siaLevel").spinner({
+            min:1,
+            max:9
+        });
+        $("#node-input-periodicReportInterval").spinner({
+            min:0
+        });
+        $("#node-input-heartbeatInterval").spinner({
+            min:0
+        });
+    },
+    oneditsave: function() {
+        // Validace a čištění hodnot před uložením
+        this.panelPort = parseInt(this.panelPort);
+        this.siaLevel = parseInt(this.siaLevel);
+        this.periodicReportInterval = parseInt(this.periodicReportInterval);
+        this.heartbeatInterval = parseInt(this.heartbeatInterval);
     }
-    if (!$("#node-input-account").val()) {
-      alert("Vyplňte číslo účtu.");
-      return false;
-    }
-    let zoneVal = $("#node-input-zoneMap").val();
-    if (zoneVal) {
-      try { JSON.parse(zoneVal); } catch(e) { alert("Neplatný JSON v mapování zón!"); return false; }
-    }
-    let userVal = $("#node-input-userMap").val();
-    if (userVal) {
-      try { JSON.parse(userVal); } catch(e) { alert("Neplatný JSON v mapování uživatelů!"); return false; }
-    }
-    let areaVal = $("#node-input-areaMap").val();
-    if (areaVal) {
-      try { JSON.parse(areaVal); } catch(e) { alert("Neplatný JSON v mapování oblastí!"); return false; }
-    }
-    return true;
-  }
 });
 </script>
 
 <script type="text/html" data-template-name="galaxy-sia-config">
-  <div class="form-row">
-    <label for="node-input-name"><i class="fa fa-tag"></i> Název</label>
-    <input type="text" id="node-input-name">
-  </div>
-  <div class="form-row">
-    <label for="node-input-panelIP"><i class="fa fa-wifi"></i> Panel IP</label>
-    <input type="text" id="node-input-panelIP" placeholder="192.168.1.100">
-  </div>
-  <div class="form-row">
-    <label for="node-input-panelPort"><i class="fa fa-plug"></i> Panel Port</label>
-    <input type="number" id="node-input-panelPort" value="10002" min="1" max="65535">
-  </div>
-  <div class="form-row">
-    <label for="node-input-account"><i class="fa fa-building"></i> Číslo účtu</label>
-    <input type="text" id="node-input-account" placeholder="např. 123456" required>
-  </div>
-  <div class="form-row">
-    <label for="node-input-siaLevel"><i class="fa fa-shield"></i> SIA úroveň</label>
-    <input type="number" id="node-input-siaLevel" min="1" max="4" value="4">
-  </div>
-  <div class="form-row">
-    <label for="node-input-encryption"><i class="fa fa-lock"></i> Šifrování</label>
-    <input type="checkbox" id="node-input-encryption">
-  </div>
-  <div class="form-row">
-    <label for="node-input-encryptionKey"><i class="fa fa-key"></i> Šifrovací klíč</label>
-    <input type="text" id="node-input-encryptionKey">
-  </div>
-  <div class="form-row">
-    <label for="node-input-encryptionHex"><i class="fa fa-check"></i> Klíč jako HEX</label>
-    <input type="checkbox" id="node-input-encryptionHex">
-  </div>
-  <div class="form-row">
-    <label for="node-input-discardTestMessages"><i class="fa fa-ban"></i> Vyřadit testovací zprávy</label>
-    <input type="checkbox" id="node-input-discardTestMessages">
-  </div>
-  <div class="form-row">
-    <label for="node-input-ackType"><i class="fa fa-retweet"></i> Typ ACK</label>
-    <select id="node-input-ackType">
-      <option value="A_CRLF">A\r\n (default)</option>
-      <option value="A">A</option>
-      <option value="ACK_CRLF">ACK\r\n</option>
-      <option value="ACK">ACK</option>
-      <option value="ECHO">ECHO (vše)</option>
-      <option value="ECHO_TRIM_END">ECHO (oříznout poslední znak)</option>
-      <option value="ECHO_STRIP_NONPRINT">ECHO (oříznout non-print)</option>
-      <option value="ECHO_TRIM_BOTH">ECHO (trim)</option>
-      <option value="CUSTOM">Vlastní</option>
-      <option value="SIA_PACKET">SIA Packet</option>
-    </select>
-  </div>
-  <div class="form-row" id="ack-custom-row" style="display:none;">
-    <label for="node-input-ackCustom"><i class="fa fa-pencil"></i> Vlastní ACK</label>
-    <input type="text" id="node-input-ackCustom">
-  </div>
-  <div class="form-row">
-    <label for="node-input-periodicReportInterval"><i class="fa fa-clock-o"></i> Perioda reportu (s)</label>
-    <input type="number" id="node-input-periodicReportInterval" min="0" value="0">
-  </div>
-  <div class="form-row">
-    <label for="node-input-heartbeatInterval"><i class="fa fa-heartbeat"></i> Heartbeat interval (s)</label>
-    <input type="number" id="node-input-heartbeatInterval" min="0" value="60">
-  </div>
-  <div class="form-row">
-    <label for="node-input-userId"><i class="fa fa-user"></i> Uživatelské ID</label>
-    <input type="text" id="node-input-userId">
-  </div>
-  <div class="form-row">
-    <label for="node-input-userCode"><i class="fa fa-user-secret"></i> Uživatelský kód</label>
-    <input type="text" id="node-input-userCode">
-  </div>
-  <div class="form-row">
-    <label for="node-input-zoneMap"><i class="fa fa-map"></i> Mapování zón (JSON)</label>
-    <input type="text" id="node-input-zoneMap" placeholder='{"1":"Vstup","2":"Garaz"}'>
-  </div>
-  <div class="form-row">
-    <label for="node-input-userMap"><i class="fa fa-users"></i> Mapování uživatelů (JSON)</label>
-    <input type="text" id="node-input-userMap" placeholder='{"11":"Martin"}'>
-  </div>
-  <div class="form-row">
-    <label for="node-input-areaMap"><i class="fa fa-map-marker"></i> Mapování oblastí (JSON)</label>
-    <input type="text" id="node-input-areaMap" placeholder='{"1":"Přízemí"}'>
-  </div>
-  <div class="form-row">
-    <label for="node-input-externalMappingPath"><i class="fa fa-folder"></i> Externí mapování (cesta)</label>
-    <input type="text" id="node-input-externalMappingPath" placeholder="/path/to/mapping.json">
-  </div>
-  <div class="form-row">
-    <label for="node-input-pin"><i class="fa fa-lock"></i> PIN</label>
-    <input type="password" id="node-input-pin">
-  </div>
+    <div class="form-row">
+        <label for="node-config-input-name"><i class="fa fa-tag"></i> Name</label>
+        <input type="text" id="node-config-input-name">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-panelIP"><i class="fa fa-globe"></i> Panel IP</label>
+        <input type="text" id="node-config-input-panelIP">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-panelPort"><i class="fa fa-random"></i> Panel Port</label>
+        <input type="text" id="node-config-input-panelPort">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-account"><i class="fa fa-id-card"></i> Account</label>
+        <input type="text" id="node-config-input-account">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-pin"><i class="fa fa-lock"></i> PIN</label>
+        <input type="password" id="node-config-input-pin">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-siaLevel"><i class="fa fa-level-up"></i> SIA Level</label>
+        <input type="text" id="node-config-input-siaLevel">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-encryption"><i class="fa fa-lock"></i> Encryption</label>
+        <input type="checkbox" id="node-config-input-encryption" style="width: auto;">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-encryptionKey"><i class="fa fa-key"></i> Encryption Key</label>
+        <input type="password" id="node-config-input-encryptionKey">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-encryptionHex"><i class="fa fa-code"></i> Key is HEX</label>
+        <input type="checkbox" id="node-config-input-encryptionHex" style="width: auto;">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-discardTestMessages"><i class="fa fa-filter"></i> Discard Test Msgs</label>
+        <input type="checkbox" id="node-config-input-discardTestMessages" style="width: auto;">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-ackType"><i class="fa fa-reply"></i> ACK Type</label>
+        <select id="node-config-input-ackType">
+            <option value="A_CRLF">A\r\n</option>
+            <option value="A">A</option>
+            <option value="ACK_CRLF">ACK\r\n</option>
+            <option value="ACK">ACK</option>
+            <option value="ECHO">Echo</option>
+            <option value="ECHO_TRIM_END">Echo (trim end)</option>
+            <option value="ECHO_STRIP_NONPRINT">Echo (strip non-print)</option>
+            <option value="ECHO_TRIM_BOTH">Echo (trim both)</option>
+            <option value="SIA_PACKET">SIA Packet</option>
+            <option value="CUSTOM">Custom</option>
+        </select>
+    </div>
+    <div class="form-row" id="ack-custom-row">
+        <label for="node-config-input-ackCustom"><i class="fa fa-pencil"></i> Custom ACK</label>
+        <input type="text" id="node-config-input-ackCustom">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-periodicReportInterval">
+            <i class="fa fa-clock-o"></i> Report Interval
+        </label>
+        <input type="text" id="node-config-input-periodicReportInterval">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-heartbeatInterval">
+            <i class="fa fa-heartbeat"></i> Heartbeat
+        </label>
+        <input type="text" id="node-config-input-heartbeatInterval">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-userId"><i class="fa fa-user"></i> User ID</label>
+        <input type="text" id="node-config-input-userId">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-userCode"><i class="fa fa-key"></i> User Code</label>
+        <input type="text" id="node-config-input-userCode">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-zoneMap"><i class="fa fa-map"></i> Zone Map</label>
+        <input type="text" id="node-config-input-zoneMap">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-userMap"><i class="fa fa-users"></i> User Map</label>
+        <input type="text" id="node-config-input-userMap">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-areaMap"><i class="fa fa-object-group"></i> Area Map</label>
+        <input type="text" id="node-config-input-areaMap">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-externalMappingPath">
+            <i class="fa fa-file-text-o"></i> External Map
+        </label>
+        <input type="text" id="node-config-input-externalMappingPath">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-debug"><i class="fa fa-bug"></i> Debug</label>
+        <input type="checkbox" id="node-config-input-debug" style="width: auto;">
+    </div>
+</script>
+
+<script type="text/html" data-help-name="galaxy-sia-config">
+    <p>Configuration node for Galaxy SIA DC-09 integration</p>
+    
+    <h3>Details</h3>
+    <dl class="message-properties">
+        <dt>Panel IP <span class="property-type">string</span></dt>
+        <dd>IP address of the Galaxy panel</dd>
+        
+        <dt>Panel Port <span class="property-type">number</span></dt>
+        <dd>Port number for SIA communication (default: 10002)</dd>
+        
+        <dt>Account <span class="property-type">string</span></dt>
+        <dd>Account identifier for SIA messages</dd>
+        
+        <dt>PIN <span class="property-type">password</span></dt>
+        <dd>PIN code for panel operations</dd>
+        
+        <dt>SIA Level <span class="property-type">number</span></dt>
+        <dd>SIA protocol level (1-9, default: 4)</dd>
+        
+        <dt class="optional">Encryption <span class="property-type">boolean</span></dt>
+        <dd>Enable message encryption</dd>
+        
+        <dt class="optional">Encryption Key <span class="property-type">string</span></dt>
+        <dd>Key for message encryption</dd>
+        
+        <dt class="optional">Key is HEX <span class="property-type">boolean</span></dt>
+        <dd>Encryption key is in hexadecimal format</dd>
+        
+        <dt class="optional">Discard Test Messages <span class="property-type">boolean</span></dt>
+        <dd>Filter out test messages (DUH)</dd>
+        
+        <dt>ACK Type <span class="property-type">string</span></dt>
+        <dd>Type of acknowledgment to send</dd>
+        
+        <dt class="optional">Custom ACK <span class="property-type">string</span></dt>
+        <dd>Custom acknowledgment string (when ACK Type is Custom)</dd>
+        
+        <dt>Report Interval <span class="property-type">number</span></dt>
+        <dd>Periodic report interval in seconds (0 to disable)</dd>
+        
+        <dt>Heartbeat <span class="property-type">number</span></dt>
+        <dd>Heartbeat interval in seconds (0 to disable)</dd>
+        
+        <dt class="optional">User ID <span class="property-type">string</span></dt>
+        <dd>User identifier for operations</dd>
+        
+        <dt class="optional">User Code <span class="property-type">string</span></dt>
+        <dd>User code for operations</dd>
+        
+        <dt class="optional">Zone/User/Area Maps <span class="property-type">object</span></dt>
+        <dd>JSON mapping for zones, users and areas</dd>
+        
+        <dt class="optional">External Map <span class="property-type">string</span></dt>
+        <dd>Path to external mapping file</dd>
+        
+        <dt class="optional">Debug <span class="property-type">boolean</span></dt>
+        <dd>Enable debug logging</dd>
+    </dl>
 </script>
