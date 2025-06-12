@@ -21,6 +21,7 @@ module.exports = function(RED) {
     node.debug(`Processing message for ACK: ${rawStr}`);
     // Pro handshake používáme specifický formát
     if (rawStr.startsWith("F#") || rawStr.startsWith("D#")) {
+      // OPRAVENO: account nyní získává pouze číslice, žádné CR/LF/skryté znaky
       const account = (rawStr.split("#")[1] || "").match(/\d+/)?.[0]?.trim() || "";
       const ackBody = `ACK00R0L0#${account}`;
       node.debug(`ACK BODY: "${ackBody}", length: ${ackBody.length}, bytes: ${[...Buffer.from(ackBody)]}`);
@@ -39,6 +40,7 @@ module.exports = function(RED) {
           const parsed = parseSIA(rawStr);
           if (parsed.valid) {
             const ackBody = `ACK${parsed.seq || "00"}R0L0#${parsed.account}`;
+            node.debug(`ACK BODY: "${ackBody}", length: ${ackBody.length}, bytes: ${[...Buffer.from(ackBody)]}`);
             const len = pad(ackBody.length, 4);
             let crc = parseSIA.siaCRC(ackBody);
             return `\r\n${len}${ackBody}${crc}\r\n`;
