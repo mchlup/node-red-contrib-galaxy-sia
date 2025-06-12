@@ -283,12 +283,20 @@ module.exports = function(RED) {
     });
   }
 
-  // Registrace typu nodu
+  // Registrace typu nodu - upravená kategorie
   RED.nodes.registerType("galaxy-sia-in", GalaxySIAInNode, {
-    category: "network",
+    category: "Galaxy SIA Connector",  // Změna kategorie
     defaults: {
       name: { value: "" },
       config: { type: "galaxy-sia-config", required: true }
-    }
+    },
+    color: "#a6d7a8",
+    inputs: 0,
+    outputs: 2,
+    icon: "font-awesome/fa-arrow-left",
+    label: function() {
+      return this.name || "galaxy-sia-in";
+    },
+    paletteLabel: "galaxy-sia-in"
   });
 };
