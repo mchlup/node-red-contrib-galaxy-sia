@@ -1,4 +1,5 @@
 module.exports = function(RED) {
+  const DEBUG = true;
   const net = require("net");
   const fs = require("fs");
   const parseSIA = require("./lib/sia-parser");
@@ -9,6 +10,13 @@ module.exports = function(RED) {
   const HEARTBEAT_INTERVAL_DEFAULT = 60; // seconds
   const MAX_CONNECTIONS = 20; // Prevent DoS
 
+  // Funkce pro debug log
+  function debugLog(node, message, data) {
+    if (DEBUG) {
+        node.debug(message + (data ? `: ${JSON.stringify(data)}` : ''));
+    }
+  }
+  
   function getAckString(cfg, rawStr, node) {
     // Pro handshake používáme speciální formát
     if (rawStr.startsWith("F#") || rawStr.startsWith("D#")) {
