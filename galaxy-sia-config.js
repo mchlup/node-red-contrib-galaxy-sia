@@ -1,44 +1,32 @@
 module.exports = function(RED) {
-  // Node-RED konfigurační node pro Galaxy SIA DC-09
-
-  function GalaxySIAConfigNode(n) {
-    RED.nodes.createNode(this, n);
-
-    // Základní parametry
-    this.account = n.account || "";
-    this.userId = n.userId || "";
-    this.userCode = n.userCode || "";
-    this.panelIP = n.panelIP || "";
-    this.panelPort = Number(n.panelPort) || 10002;
-    this.siaLevel = Number(n.siaLevel) || 4;
-
-    // Dynamické načítání mapování
-    this.externalMappingPath = n.externalMappingPath || "";
-
-    // Mapování entit (parse JSON, pokud je validní)
-    try { this.zoneMap = n.zoneMap ? JSON.parse(n.zoneMap) : {}; } catch(e) { this.zoneMap = {}; }
-    try { this.userMap = n.userMap ? JSON.parse(n.userMap) : {}; } catch(e) { this.userMap = {}; }
-    try { this.areaMap = n.areaMap ? JSON.parse(n.areaMap) : {}; } catch(e) { this.areaMap = {}; }
-
-    // Šifrování
-    this.encryption = n.encryption === true || n.encryption === "true";
-    this.encryptionKey = n.encryptionKey || "";
-    this.encryptionHex = n.encryptionHex === true || n.encryptionHex === "true";
-
-    // Další volby
-    this.connectOnDemand = n.connectOnDemand === true || n.connectOnDemand === "true";
-    this.heartbeatInterval = Number(n.heartbeatInterval) || 60;
-    this.periodicReportInterval = Number(n.periodicReportInterval) || 0;
-    this.discardTestMessages = n.discardTestMessages === true || n.discardTestMessages === "true";
-    this.deviceList = n.deviceList || "";
-
-    // ACK handshake – defaultně echo bez CRLF
-    this.ackType = n.ackType || "ECHO_TRIM_END";
-    this.ackCustom = n.ackCustom || "";
-
-    // Debug flag
-    this.debug = n.debug === true || n.debug === "true";
-  }
-
-  RED.nodes.registerType("galaxy-sia-config", GalaxySIAConfigNode);
+    function GalaxySiaConfigNode(config) {
+        RED.nodes.createNode(this, config);
+        this.name = config.name;
+        this.panelIP = config.panelIP;
+        this.panelPort = config.panelPort;
+        this.account = config.account;
+        this.siaLevel = config.siaLevel;
+        this.encryption = config.encryption;
+        this.encryptionKey = config.encryptionKey;
+        this.encryptionHex = config.encryptionHex;
+        this.discardTestMessages = config.discardTestMessages;
+        this.ackType = config.ackType;
+        this.ackCustom = config.ackCustom;
+        this.periodicReportInterval = config.periodicReportInterval;
+        this.userId = config.userId;
+        this.userCode = config.userCode;
+        this.heartbeatInterval = config.heartbeatInterval;
+        this.zoneMap = config.zoneMap;
+        this.userMap = config.userMap;
+        this.areaMap = config.areaMap;
+        this.externalMappingPath = config.externalMappingPath;
+        if (config.credentials) {
+            this.credentials = config.credentials;
+        }
+    }
+    RED.nodes.registerType("galaxy-sia-config", GalaxySiaConfigNode, {
+        credentials: {
+            pin: {type:"password"}
+        }
+    });
 };
