@@ -18,79 +18,84 @@ module.exports = function(RED) {
   }
 
   function getAckString(cfg, rawStr, node) {
-  node.debug(`Processing message for ACK: ${rawStr}`);
-  // Pro handshake používáme specifický formát
-  if (rawStr.startsWith("F#") || rawStr.startsWith("D#")) {
-    const account = rawStr.split("#")[1].replace(/[^\d]/g, '');
-    const ackBody = `ACK00R0L0#${account}`;
-    const len = ackBody.length.toString().padStart(4, '0'); // vždy 4 číslice!
-    let crc = parseSIA.siaCRC(ackBody);
-    if (typeof crc === "number") crc = crc.toString(16).toUpperCase().padStart(2, "0");
-    if (crc.length > 2) crc = crc.slice(0, 2); // Ber pouze první 2 znaky!
-    const ackStr = `\r\n${len}${ackBody}${crc}\r\n`;
-    node.debug(`Sending handshake ACK: ${ackStr}`);
-    return ackStr;
-  }
-    
+    node.debug(`Processing message for ACK: ${rawStr}`);
+    // Pro handshake používáme specifický formát
+    if (rawStr.startsWith("F#") || rawStr.startsWith("D#")) {
+      const account = rawStr.split("#")[1].replace(/[^\d]/g, '');
+      const ackBody = `ACK00R0L0#${account}`;
+      // Vždy 4 číslice délky dle DC-09
+      const len = ackBody.length.toString().padStart(4, '0');
+      // SIA CRC musí být pouze 2 znaky HEX
+      let crc = parseSIA.siaCRC(ackBody);
+      if (typeof crc === "number") crc = crc.toString(16).toUpperCase().padStart(2, "0");
+      if (crc.length > 2) crc = crc.slice(0, 2);
+      const ackStr = `\r\n${len}${ackBody}${crc}\r\n`;
+      node.debug(`Sending handshake ACK: ${ackStr}`);
+      return ackStr;
+    }
     // Ostatní typy ACK zůstávají stejné
     switch (cfg.ackType) {
-        case "SIA_PACKET":
-            try {
-                const parsed = parseSIA(rawStr);
-                if (parsed.valid) {
-                    const ackBody = `ACK${parsed.seq || "00"}R0L0#${parsed.account}`;
-                    const len = pad(ackBody.length, 4);
-                    const crc = parseSIA.siaCRC(ackBody);
-                    return `\r\n${len}${ackBody}${crc}\r\n`;
-                }
-            } catch (e) {
-                node.warn("Error creating SIA ACK packet: " + e.message);
-            }
-            // Fallback to simple ACK if parsing fails
-            return "ACK\r\n";
-            
-        case "A_CRLF":              return "A\r\n";
-        case "A":                   return "A";
-        case "ACK_CRLF":           return "ACK\r\n";
-        case "ACK":                return "ACK";
-        case "ECHO":               return rawStr;
-        case "ECHO_TRIM_END":      return rawStr.slice(0, -1);
-        case "ECHO_STRIP_NONPRINT": return rawStr.replace(/[\x00-\x1F\x7F]+$/g, "");
-        case "ECHO_TRIM_BOTH":     return rawStr.trim();
-        case "CUSTOM":             return cfg.ackCustom || "";
-        default:
-            node.warn("Unknown ackType: " + cfg.ackType + ", using 'ACK\\r\\n'");
-            return "ACK\r\n";
+      case "SIA_PACKET":
+        try {
+          const parsed = parseSIA(rawStr);
+          if (parsed.valid) {
+            const ackBody = `ACK${parsed.seq || "00"}R0L0#${parsed.account}`;
+            const len = pad(ackBody.length, 4);
+            let crc = parseSIA.siaCRC(ackBody);
+            if (typeof crc === "number") crc = crc.toString(16).toUpperCase().padStart(2, "0");
+            if (crc.length > 2) crc = crc.slice(0, 2);
+            return `\r\n${len}${ackBody}${crc}\r\n`;
+          }
+        } catch (e) {
+          node.warn("Error creating SIA ACK packet: " + e.message);
+        }
+        // Fallback to simple ACK if parsing fails
+        return "ACK\r\n";
+
+      case "A_CRLF":              return "A\r\n";
+      case "A":                   return "A";
+      case "ACK_CRLF":            return "ACK\r\n";
+      case "ACK":                 return "ACK";
+      case "ECHO":                return rawStr;
+      case "ECHO_TRIM_END":       return rawStr.slice(0, -1);
+      case "ECHO_STRIP_NONPRINT": return rawStr.replace(/[\x00-\x1F\x7F]+$/g, "");
+      case "ECHO_TRIM_BOTH":      return rawStr.trim();
+      case "CUSTOM":              return cfg.ackCustom || "";
+      default:
+        node.warn("Unknown ackType: " + cfg.ackType + ", using 'ACK\\r\\n'");
+        return "ACK\r\n";
     }
   }
 
   function buildAckPacket(account, seq = "00", rcv = "R0", lpref = "L0") {
     const body = `ACK${seq}${rcv}${lpref}#${account}`;
     const len = pad(body.length, 4);
-    const crc = parseSIA.siaCRC(body);
+    let crc = parseSIA.siaCRC(body);
+    if (typeof crc === "number") crc = crc.toString(16).toUpperCase().padStart(2, "0");
+    if (crc.length > 2) crc = crc.slice(0, 2);
     // Upravený formát ACK zprávy
-    return `\r\n${len}${body}${crc}\r\n`;  // Změněno pořadí CRC a přidány CRLF na obou koncích
+    return `\r\n${len}${body}${crc}\r\n`;
   }
 
   function sendAck(node, socket, ackStr) {
     try {
-        if (!socket.writable) {
-            node.warn("Socket not writable when trying to send ACK");
-            return;
-        }
-        
-        // Ensure proper encoding and transmission
-        if (ackStr.startsWith("\r\n")) {
-            // Send as buffer for binary safety
-            socket.write(Buffer.from(ackStr, "binary"));
-        } else {
-            // Send as regular string for simple ACKs
-            socket.write(ackStr);
-        }
-        
-        node.debug(`ACK sent successfully: ${ackStr}`);
+      if (!socket.writable) {
+        node.warn("Socket not writable when trying to send ACK");
+        return;
+      }
+
+      // Ensure proper encoding and transmission
+      if (ackStr.startsWith("\r\n")) {
+        // Send as buffer for binary safety
+        socket.write(Buffer.from(ackStr, "binary"));
+      } else {
+        // Send as regular string for simple ACKs
+        socket.write(ackStr);
+      }
+
+      node.debug(`ACK sent successfully: ${ackStr}`);
     } catch (err) {
-        node.error("Error sending ACK: " + err.message);
+      node.error("Error sending ACK: " + err.message);
     }
   }
 
@@ -174,76 +179,76 @@ module.exports = function(RED) {
       socket.on("data", function(data) {
         const rawStr = data.toString();
         node.debug(`Received raw data: ${rawStr}`);
-        
+
         try {
-            // Handshake detekce
-            const h = rawStr.match(/^([FD]#?[0-9A-Za-z]+)[^\r\n]*/);
-            if (h) {
-                const ackStr = getAckString(cfg, h[1], node);
-                sendAck(node, socket, ackStr);
-                setStatus("handshake");
-                
-                // Rozšířené logování pro handshake
-                node.debug({
-                    event: "handshake",
-                    received: rawStr,
-                    sending: ackStr,
-                    account: h[1].split("#")[1]
-                });
-                
-                node.send([{ 
-                    payload: { 
-                        type: "handshake", 
-                        ack: ackStr, 
-                        raw: rawStr,
-                        account: h[1].split("#")[1],
-                        timestamp: new Date().toISOString()
-                    } 
-                }, null]);
-                return;
-            }
+          // Handshake detekce
+          const h = rawStr.match(/^([FD]#?[0-9A-Za-z]+)[^\r\n]*/);
+          if (h) {
+            const ackStr = getAckString(cfg, h[1], node);
+            sendAck(node, socket, ackStr);
+            setStatus("handshake");
 
-            // Pokud to není handshake, zkusíme parsovat jako SIA zprávu
-            const parsed = parseSIA(
-                rawStr,
-                cfg.siaLevel,
-                cfg.encryption,
-                cfg.encryptionKey,
-                cfg.encryptionHex
-            );
-
-            node.debug(`Parsed SIA message: ${JSON.stringify(parsed)}`);
-
-            if (parsed.valid) {
-                const ackStr = getAckString(cfg, rawStr, node);
-                sendAck(node, socket, ackStr);
-                
-                node.debug({
-                    event: "message",
-                    parsed: parsed,
-                    ack: ackStr
-                });
-                
-                // Odešleme zprávu s daty
-                node.send([{
-                    payload: {
-                        ...parsed,
-                        type: "sia_message",
-                        ack: ackStr,
-                        raw: rawStr,
-                        timestamp: new Date().toISOString()
-                    }
-                }, null]);
-            } else {
-                node.warn(`Invalid message received: ${rawStr}`);
-            }
-        } catch (err) {
-            node.error(`Error processing message: ${err.message}`);
+            // Rozšířené logování pro handshake
             node.debug({
-                event: "error",
-                raw: rawStr,
-                error: err.message
+              event: "handshake",
+              received: rawStr,
+              sending: ackStr,
+              account: h[1].split("#")[1]
             });
+
+            node.send([{
+              payload: {
+                type: "handshake",
+                ack: ackStr,
+                raw: rawStr,
+                account: h[1].split("#")[1],
+                timestamp: new Date().toISOString()
+              }
+            }, null]);
+            return;
+          }
+
+          // Pokud to není handshake, zkusíme parsovat jako SIA zprávu
+          const parsed = parseSIA(
+            rawStr,
+            cfg.siaLevel,
+            cfg.encryption,
+            cfg.encryptionKey,
+            cfg.encryptionHex
+          );
+
+          node.debug(`Parsed SIA message: ${JSON.stringify(parsed)}`);
+
+          if (parsed.valid) {
+            const ackStr = getAckString(cfg, rawStr, node);
+            sendAck(node, socket, ackStr);
+
+            node.debug({
+              event: "message",
+              parsed: parsed,
+              ack: ackStr
+            });
+
+            // Odešleme zprávu s daty
+            node.send([{
+              payload: {
+                ...parsed,
+                type: "sia_message",
+                ack: ackStr,
+                raw: rawStr,
+                timestamp: new Date().toISOString()
+              }
+            }, null]);
+          } else {
+            node.warn(`Invalid message received: ${rawStr}`);
+          }
+        } catch (err) {
+          node.error(`Error processing message: ${err.message}`);
+          node.debug({
+            event: "error",
+            raw: rawStr,
+            error: err.message
+          });
         }
       });
 
@@ -260,10 +265,10 @@ module.exports = function(RED) {
 
     function startServer() {
       if (server) return;
-      
+
       try {
         server = net.createServer(handleSocket);
-        
+
         server.on("connection", function(socket) {
           // Limit number of connections
           if (sockets.length >= MAX_CONNECTIONS) {
@@ -293,7 +298,7 @@ module.exports = function(RED) {
 
     function stopServer(done) {
       stopHeartbeat();
-      
+
       if (server) {
         try {
           server.close(() => {
