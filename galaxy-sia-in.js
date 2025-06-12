@@ -18,82 +18,110 @@ module.exports = function(RED) {
   }
 
   function getAckString(cfg, rawStr, node) {
-    node.debug(`Processing message for ACK: ${rawStr}`);
-    // Pro handshake používáme specifický formát
+    // Debug logging pro analýzu vstupních dat
+    if (node && cfg.debug) {
+        node.debug(`Raw ACK input: ${Buffer.from(rawStr).toString('hex')}`);
+    }
+    
+    // Handshake detekce a zpracování
     if (rawStr.startsWith("F#") || rawStr.startsWith("D#")) {
-      // OPRAVENO: account nyní získává pouze číslice, žádné CR/LF/skryté znaky
-      const account = (rawStr.split("#")[1] || "").match(/\d+/)?.[0]?.trim() || "";
-      const ackBody = `ACK00R0L0#${account}`;
-      node.debug(`ACK BODY: "${ackBody}", length: ${ackBody.length}, bytes: ${[...Buffer.from(ackBody)]}`);
-      // Délka těla ACK vždy 4 číslice
-      const len = ackBody.length.toString().padStart(4, '0');
-      // SIA CRC vždy 4 znaky HEX (DC-09 standard)
-      const crc = parseSIA.siaCRC(ackBody);
-      const ackStr = `\r\n${len}${ackBody}${crc}\r\n`;
-      node.debug(`Sending handshake ACK: ${ackStr}`);
-      return ackStr;
-    }
-    // Ostatní typy ACK zůstávají stejné
-    switch (cfg.ackType) {
-      case "SIA_PACKET":
         try {
-          const parsed = parseSIA(rawStr);
-          if (parsed.valid) {
-            const ackBody = `ACK${parsed.seq || "00"}R0L0#${parsed.account}`;
-            node.debug(`ACK BODY: "${ackBody}", length: ${ackBody.length}, bytes: ${[...Buffer.from(ackBody)]}`);
-            const len = pad(ackBody.length, 4);
-            let crc = parseSIA.siaCRC(ackBody);
-            return `\r\n${len}${ackBody}${crc}\r\n`;
-          }
-        } catch (e) {
-          node.warn("Error creating SIA ACK packet: " + e.message);
+            // Extrahujeme account číslo
+            const account = rawStr.split("#")[1].replace(/[^\d]/g, '');
+            
+            // Vytvoříme standardizovaný ACK packet
+            const ackStr = buildAckPacket(account);
+            
+            // Debug logging
+            if (node && cfg.debug) {
+                node.debug(`Handshake ACK generated: ${Buffer.from(ackStr).toString('hex')}`);
+                node.debug(`ACK length check: ${ackStr.length}`);
+                node.debug(`ACK parts: ${JSON.stringify({
+                    account: account,
+                    rawLength: rawStr.length,
+                    ackLength: ackStr.length,
+                    hexDump: Buffer.from(ackStr).toString('hex')
+                })}`);
+            }
+            
+            return ackStr;
+        } catch (err) {
+            node.error(`Error creating handshake ACK: ${err.message}`);
+            return "ACK\r\n"; // Fallback response
         }
-        // Fallback to simple ACK if parsing fails
-        return "ACK\r\n";
-
-      case "A_CRLF":              return "A\r\n";
-      case "A":                   return "A";
-      case "ACK_CRLF":            return "ACK\r\n";
-      case "ACK":                 return "ACK";
-      case "ECHO":                return rawStr;
-      case "ECHO_TRIM_END":       return rawStr.slice(0, -1);
-      case "ECHO_STRIP_NONPRINT": return rawStr.replace(/[\x00-\x1F\x7F]+$/g, "");
-      case "ECHO_TRIM_BOTH":      return rawStr.trim();
-      case "CUSTOM":              return cfg.ackCustom || "";
-      default:
-        node.warn("Unknown ackType: " + cfg.ackType + ", using 'ACK\\r\\n'");
-        return "ACK\r\n";
     }
-  }
+    
+    // Zpracování ostatních typů ACK
+    switch (cfg.ackType) {
+        case "SIA_PACKET":
+            try {
+                const parsed = parseSIA(rawStr);
+                if (parsed.valid) {
+                    return buildAckPacket(parsed.account, parsed.seq || "00");
+                }
+            } catch (e) {
+                if (node) node.warn(`Error creating SIA ACK packet: ${e.message}`);
+            }
+            return buildAckPacket(cfg.account, "00");
+            
+        case "A_CRLF":              return "A\r\n";
+        case "A":                   return "A";
+        case "ACK_CRLF":           return "ACK\r\n";
+        case "ACK":                return "ACK";
+        case "ECHO":               return rawStr;
+        case "ECHO_TRIM_END":      return rawStr.slice(0, -1);
+        case "ECHO_STRIP_NONPRINT": return rawStr.replace(/[\x00-\x1F\x7F]+$/g, "");
+        case "ECHO_TRIM_BOTH":     return rawStr.trim();
+        case "CUSTOM":             return cfg.ackCustom || "";
+        default:
+            if (node) node.warn(`Unknown ackType: ${cfg.ackType}, using 'ACK\\r\\n'`);
+            return "ACK\r\n";
+    }
+}
+
 
   function buildAckPacket(account, seq = "00", rcv = "R0", lpref = "L0") {
-    const body = `ACK${seq}${rcv}${lpref}#${account}`;
-    const len = pad(body.length, 4);
-    let crc = parseSIA.siaCRC(body);
-    return `\r\n${len}${body}${crc}\r\n`;
-  }
+    // 1. Vytvoříme základní ACK zprávu bez skrytých znaků
+    const ackBody = `ACK${seq}${rcv}${lpref}#${account}`;
+    
+    // 2. Spočítáme skutečnou délku těla zprávy
+    const bodyLength = Buffer.from(ackBody).length;
+    
+    // 3. Vytvoříme padding délky na 4 znaky
+    const lenStr = pad(bodyLength, 4);
+    
+    // 4. Vypočítáme CRC z těla zprávy
+    const crc = siaCRC(ackBody);
+    
+    // 5. Sestavíme finální zprávu s explicitními CRLF
+    const finalPacket = `\r\n${lenStr}${ackBody}${crc}\r\n`;
+    
+    return finalPacket;
+}
 
-  function sendAck(node, socket, ackStr) {
+  function sendAck(socket, ackStr, node) {
     try {
-      if (!socket.writable) {
-        node.warn("Socket not writable when trying to send ACK");
-        return;
-      }
-
-      // Ensure proper encoding and transmission
-      if (ackStr.startsWith("\r\n")) {
-        // Send as buffer for binary safety
-        socket.write(Buffer.from(ackStr, "binary"));
-      } else {
-        // Send as regular string for simple ACKs
-        socket.write(ackStr);
-      }
-
-      node.debug(`ACK sent successfully: ${ackStr}`);
+        // Kontrola socket writability
+        if (!socket.writable) {
+            if (node) node.warn("Socket not writable when trying to send ACK");
+            return;
+        }
+        
+        // Vždy posíláme jako Buffer pro zajištění správného přenosu binárních dat
+        const ackBuffer = Buffer.from(ackStr, "binary");
+        
+        // Debug logging před odesláním
+        if (node && node.config && node.config.debug) {
+            node.debug(`Sending ACK (${ackBuffer.length} bytes): ${ackBuffer.toString('hex')}`);
+        }
+        
+        // Odeslání dat
+        socket.write(ackBuffer);
+        
     } catch (err) {
-      node.error("Error sending ACK: " + err.message);
+        if (node) node.error(`Error sending ACK: ${err.message}`);
     }
-  }
+}
 
   function loadDynamicMapping(path, node) {
     try {
