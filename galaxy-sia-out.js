@@ -101,10 +101,18 @@ module.exports = function(RED) {
   }
 
   RED.nodes.registerType("galaxy-sia-out", GalaxySiaOutNode, {
-    category: "network",
+    category: "Galaxy SIA Connector",  // Změna kategorie
     defaults: {
       name: { value: "" },
       config: { type: "galaxy-sia-config", required: true }
-    }
+    },
+    color: "#a6d7a8",
+    inputs: 1,
+    outputs: 1,
+    icon: "font-awesome/fa-arrow-right",
+    label: function() {
+      return this.name || "galaxy-sia-out";
+    },
+    paletteLabel: "galaxy-sia-out"
   });
 };
