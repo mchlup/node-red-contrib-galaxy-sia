@@ -18,16 +18,19 @@ module.exports = function(RED) {
   }
 
   function getAckString(cfg, rawStr, node) {
-  node.debug(`Processing message for ACK: ${rawStr}`);
-  if (rawStr.startsWith("F#") || rawStr.startsWith("D#")) {
-    const account = rawStr.split("#")[1].replace(/[^\d]/g, '');
-    const ackBody = `ACK00R0L0#${account}`;
-    const len = ackBody.length.toString().padStart(4, '0'); // vždy 4 číslice, správně!
-    const crc = parseSIA.siaCRC(ackBody); // vždy 4 znaky HEX
-    const ackStr = `\r\n${len}${ackBody}${crc}\r\n`;
-    node.debug(`Sending handshake ACK: ${ackStr}`);
-    return ackStr;
-  }
+    node.debug(`Processing message for ACK: ${rawStr}`);
+    // Pro handshake používáme specifický formát
+    if (rawStr.startsWith("F#") || rawStr.startsWith("D#")) {
+      const account = rawStr.split("#")[1].replace(/[^\d]/g, '');
+      const ackBody = `ACK00R0L0#${account}`;
+      // Délka těla ACK vždy 4 číslice
+      const len = ackBody.length.toString().padStart(4, '0');
+      // SIA CRC vždy 4 znaky HEX (DC-09 standard)
+      const crc = parseSIA.siaCRC(ackBody);
+      const ackStr = `\r\n${len}${ackBody}${crc}\r\n`;
+      node.debug(`Sending handshake ACK: ${ackStr}`);
+      return ackStr;
+    }
     // Ostatní typy ACK zůstávají stejné
     switch (cfg.ackType) {
       case "SIA_PACKET":
@@ -138,7 +141,7 @@ module.exports = function(RED) {
         heartbeatTimer = setInterval(() => {
           sockets.forEach(socket => {
             if (socket.writable) {
-              // POZOR: Pro správnou SIA zprávu použijte správný SIA packet (např. DUH), ne prostý text!
+              // Pro správnou SIA zprávu použijte správný SIA packet (např. DUH), ne prostý text!
               // socket.write(HEARTBEAT_PAYLOAD);
             }
           });
