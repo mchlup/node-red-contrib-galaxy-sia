@@ -1,54 +1,56 @@
 <script type="text/javascript">
-RED.nodes.registerType('galaxy-sia-out', {
-  category: 'galaxy-sia',
-  color: '#eea8a8',
-  defaults: {
-    name: {value:""},
-    config: {type:"galaxy-sia-config", required:true}
-  },
-  inputs: 1,
-  outputs: 2,
-  icon: "font-awesome/fa-upload",
-  label: function() {
-    return this.name || "galaxy-sia-out";
-  }
-});
+    RED.nodes.registerType('galaxy-sia-out',{
+        category: 'network',
+        color: '#a6d7a8',
+        defaults: {
+            name: { value: "" },
+            config: { type: "galaxy-sia-config", required: true }
+        },
+        inputs: 1,
+        outputs: 1,
+        icon: "font-awesome/fa-arrow-right",
+        label: function() {
+            return this.name || "galaxy-sia-out";
+        },
+        paletteLabel: "galaxy-sia-out"
+    });
 </script>
 
 <script type="text/html" data-template-name="galaxy-sia-out">
-  <div class="form-row">
-    <label for="node-input-name"><i class="fa fa-tag"></i> Název</label>
-    <input type="text" id="node-input-name" placeholder="Název uzlu">
-  </div>
-  <div class="form-row">
-    <label for="node-input-config"><i class="fa fa-cog"></i> Konfigurace</label>
-    <input type="text" id="node-input-config" data-input-type="node-config" data-input-name="config">
-  </div>
-  <div class="form-tips">
-    <b>Očekávaný vstup:</b>
-    <pre>
-msg.payload = {
-  command: "AR",     // například "AR" (arm), "DA" (disarm), "ST" (stay)
-  group: 1           // volitelně skupina/partice
-}</pre>
-  </div>
+    <div class="form-row">
+        <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
+        <input type="text" id="node-input-name" placeholder="Name">
+    </div>
+    <div class="form-row">
+        <label for="node-input-config"><i class="fa fa-cog"></i> Config</label>
+        <input type="text" id="node-input-config" placeholder="Select config...">
+    </div>
 </script>
 
 <script type="text/html" data-help-name="galaxy-sia-out">
-  <p>
-    Odesílá příkazy (např. ARM/DISARM) ústředně Galaxy v SIA DC-09 formátu.<br>
-    Pokud je v konfiguraci povoleno šifrování (AES-128), příkaz je automaticky zašifrován.
-  </p>
-  <h3>Výstupy</h3>
-  <ol>
-    <li>
-      <b>Hlavní výstup</b>: není používán (rezervováno pro rozšíření).
-    </li>
-    <li>
-      <b>Debug výstup</b>: Všechny raw zprávy odeslané tímto uzlem.
-      <br><code>msg.payload.raw</code> je text zprávy.
-      <br><code>msg.payload.type</code> je <b>'out'</b>.
-      <br><code>msg.payload.timestamp</code>, <code>msg.payload.remoteAddress</code>
-    </li>
-  </ol>
+    <p>A node for sending commands to Galaxy panel via SIA DC-09 protocol.</p>
+
+    <h3>Inputs</h3>
+    <dl class="message-properties">
+        <dt>command <span class="property-type">string</span></dt>
+        <dd>The command to send to the panel</dd>
+        
+        <dt>params <span class="property-type">array</span></dt>
+        <dd>Optional parameters for the command</dd>
+    </dl>
+
+    <h3>Outputs</h3>
+    <dl class="message-properties">
+        <dt>payload <span class="property-type">string</span></dt>
+        <dd>The raw SIA command that was sent</dd>
+    </dl>
+
+    <h3>Details</h3>
+    <p>This node sends commands to a Galaxy panel using the SIA DC-09 protocol. 
+       It requires a configuration node that specifies the connection details.</p>
+    
+    <h3>References</h3>
+    <ul>
+        <li><a href="https://github.com/mchlup/node-red-contrib-galaxy-sia">GitHub</a> - the nodes documentation</li>
+    </ul>
 </script>
