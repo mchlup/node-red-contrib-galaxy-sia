@@ -1,47 +1,32 @@
+<script type="text/html" data-template-name="galaxy-sia-in">
+  <div class="form-row">
+    <label for="node-input-name"><i class="fa fa-tag"></i> Název</label>
+    <input type="text" id="node-input-name">
+  </div>
+  <div class="form-row">
+    <label for="node-input-config"><i class="fa fa-cog"></i> Konfigurace SIA serveru</label>
+    <input type="text" id="node-input-config">
+  </div>
+  <div class="form-row">
+    <label for="node-input-debug"><i class="fa fa-bug"></i> Debug výstup</label>
+    <input type="checkbox" id="node-input-debug">
+  </div>
+</script>
+
 <script type="text/javascript">
-RED.nodes.registerType('galaxy-sia-in', {
-  category: 'galaxy-sia',
-  color: '#a6d7a8',
+RED.nodes.registerType('galaxy-sia-in',{
+  category: 'input',
+  color: "#a6d7a8",
   defaults: {
-    name: {value:""},
-    config: {type:"galaxy-sia-config", required:true}
+    name:   { value:"" },
+    config: { type:"galaxy-sia-config", required:true },
+    debug:  { value: false }
   },
   inputs: 0,
   outputs: 2,
-  icon: "font-awesome/fa-bell",
+  icon: "font-awesome/fa-sign-in",
   label: function() {
     return this.name || "galaxy-sia-in";
   }
 });
-</script>
-
-<script type="text/html" data-template-name="galaxy-sia-in">
-  <div class="form-row">
-    <label for="node-input-name"><i class="fa fa-tag"></i> Název</label>
-    <input type="text" id="node-input-name" placeholder="Název uzlu">
-  </div>
-  <div class="form-row">
-    <label for="node-input-config"><i class="fa fa-cog"></i> Konfigurace</label>
-    <input type="text" id="node-input-config" data-input-type="node-config" data-input-name="config">
-  </div>
-</script>
-
-<script type="text/html" data-help-name="galaxy-sia-in">
-  <p>
-    Příchozí uzel pro SIA DC-09 zprávy. Přijímá události z ústředny Galaxy Dimension.<br>
-    <b>Podporuje AES-128 šifrování</b> (pokud je v konfiguračním uzlu povoleno).
-  </p>
-  <h3>Výstupy</h3>
-  <ol>
-    <li>
-      <b>Hlavní výstup</b>: Událost (pouze validní SIA zprávy).
-      <br><code>msg.payload</code> obsahuje pole <i>account</i>, <i>code</i>, <i>zone</i>, <i>description</i>, <i>timestamp</i>, <i>crcOk</i>, <i>decrypted</i>, <i>raw</i>.
-    </li>
-    <li>
-      <b>Debug výstup</b>: Veškeré raw zprávy přijímané tímto uzlem.
-      <br><code>msg.payload.raw</code> je text původní SIA zprávy.
-      <br><code>msg.payload.type</code> je <b>'in'</b>.
-      <br><code>msg.payload.timestamp</code>, <code>msg.payload.remoteAddress</code>
-    </li>
-  </ol>
 </script>
