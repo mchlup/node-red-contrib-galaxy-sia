@@ -49,16 +49,20 @@ RED.nodes.registerType('galaxy-sia-config',{
         $("#ack-custom-row").hide();
       }
     }).trigger("change");
+    // Checkbox synchronizace
+    $("#node-input-encryptionHex").prop("checked", $("#node-input-encryptionHex").val());
+    $("#node-input-discardTestMessages").prop("checked", $("#node-input-discardTestMessages").val());
+    $("#node-input-encryption").prop("checked", $("#node-input-encryption").val());
   },
   oneditsave: function() {
-    // Validate required fields
     if (!$("#node-input-panelIP").val()) {
+      alert("Vyplňte IP panelu.");
       return false;
     }
     if (!$("#node-input-account").val()) {
+      alert("Vyplňte číslo účtu.");
       return false;
     }
-    // Optionally validate JSON mapping
     let zoneVal = $("#node-input-zoneMap").val();
     if (zoneVal) {
       try { JSON.parse(zoneVal); } catch(e) { alert("Neplatný JSON v mapování zón!"); return false; }
@@ -71,7 +75,6 @@ RED.nodes.registerType('galaxy-sia-config',{
     if (areaVal) {
       try { JSON.parse(areaVal); } catch(e) { alert("Neplatný JSON v mapování oblastí!"); return false; }
     }
-    // ackCustom validace probíhá už v defaults.validate
     return true;
   }
 });
@@ -92,113 +95,81 @@ RED.nodes.registerType('galaxy-sia-config',{
   </div>
   <div class="form-row">
     <label for="node-input-account"><i class="fa fa-building"></i> Číslo účtu</label>
-    <input type="text" id="node-input-account" placeholder="např. 1234" required>
-    <span class="help-block">Číslo účtu pro komunikaci s ústřednou Galaxy Dimension.</span>
+    <input type="text" id="node-input-account" placeholder="např. 123456" required>
   </div>
   <div class="form-row">
-    <label for="node-input-userId"><i class="fa fa-user"></i> ID uživatele</label>
-    <input type="text" id="node-input-userId" placeholder="např. 007">
-    <span class="help-block">Číslo uživatele z Galaxy Dimension (pro vzdálené ovládání/příkazy).</span>
+    <label for="node-input-siaLevel"><i class="fa fa-shield"></i> SIA úroveň</label>
+    <input type="number" id="node-input-siaLevel" min="1" max="4" value="4">
   </div>
   <div class="form-row">
-    <label for="node-input-userCode"><i class="fa fa-key"></i> Kód uživatele (PIN)</label>
-    <input type="password" id="node-input-userCode" placeholder="např. 1234">
-    <span class="help-block">PIN uživatele uložený v Galaxy Dimension (bude použit pro autorizaci příkazů).</span>
-  </div>
-  <div class="form-row">
-    <label for="node-input-siaLevel"><i class="fa fa-list-ol"></i> SIA úroveň</label>
-    <select id="node-input-siaLevel">
-      <option value="0">0 (Basic)</option>
-      <option value="1">1</option>
-      <option value="2">2 (Text)</option>
-      <option value="3">3</option>
-      <option value="4" selected>4 (Control)</option>
-    </select>
-    <span class="help-block">Standardní je úroveň 4 pro Galaxy Dimension.</span>
-  </div>
-  <div class="form-row">
-    <label for="node-input-ackType"><i class="fa fa-reply"></i> Typ ACK odpovědi</label>
-    <select id="node-input-ackType">
-      <option value="A_CRLF">A + CRLF ("A\r\n")</option>
-      <option value="A">A (jen symbol)</option>
-      <option value="ACK_CRLF">ACK + CRLF ("ACK\r\n")</option>
-      <option value="ACK">ACK (jen text)</option>
-      <option value="ECHO">Echo původní zprávy</option>
-      <option value="ECHO_TRIM_END" selected>Echo (bez posledního znaku)</option>
-      <option value="ECHO_STRIP_NONPRINT">Echo (odstranit netisknutelné na konci)</option>
-      <option value="ECHO_TRIM_BOTH">Echo (trim start i end)</option>
-      <option value="SIA_PACKET">SIA DC-09 ACK packet</option>
-      <option value="CUSTOM">Vlastní odpověď</option>
-    </select>
-    <span class="help-block">Vyberte odpovídající typ ACK pro vaše zařízení. Pro Galaxy Dimension doporučujeme "SIA_PACKET".</span>
-  </div>
-  <div class="form-row" id="ack-custom-row" style="display:none;">
-    <label for="node-input-ackCustom"><i class="fa fa-pencil"></i> Vlastní ACK</label>
-    <input type="text" id="node-input-ackCustom" placeholder="např. OK\r\n">
-    <span class="help-block">Použije se pouze pokud je vybrán typ ACK "Vlastní odpověď".</span>
-  </div>
-  <div class="form-row">
-    <label for="node-input-heartbeatInterval"><i class="fa fa-heartbeat"></i> Heartbeat interval (s)</label>
-    <input type="number" id="node-input-heartbeatInterval" min="0" max="3600" value="60">
-    <span class="help-block">Interval pro odesílání heartbeat zpráv všem připojeným klientům (0 = vypnuto).</span>
-  </div>
-  <div class="form-row">
-    <label for="node-input-encryption"><i class="fa fa-lock"></i> Použít šifrování (AES)</label>
-    <input type="checkbox" id="node-input-encryption" style="width:auto;">
-    <span class="help-block">Zaškrtněte, pokud je komunikace šifrovaná (AES).</span>
+    <label for="node-input-encryption"><i class="fa fa-lock"></i> Šifrování</label>
+    <input type="checkbox" id="node-input-encryption">
   </div>
   <div class="form-row">
     <label for="node-input-encryptionKey"><i class="fa fa-key"></i> Šifrovací klíč</label>
-    <input type="text" id="node-input-encryptionKey" placeholder="např. 00112233445566778899AABBCCDDEEFF">
-    <span class="help-block">Zadejte klíč pro AES šifrování (hex nebo ASCII).</span>
+    <input type="text" id="node-input-encryptionKey">
   </div>
   <div class="form-row">
-    <label for="node-input-encryptionHex"><i class="fa fa-file-code-o"></i> Klíč je hexadecimální</label>
-    <input type="checkbox" id="node-input-encryptionHex" style="width:auto;">
-    <span class="help-block">Zaškrtněte, pokud je šifrovací klíč v hex formátu.</span>
+    <label for="node-input-encryptionHex"><i class="fa fa-check"></i> Klíč jako HEX</label>
+    <input type="checkbox" id="node-input-encryptionHex">
   </div>
   <div class="form-row">
-    <label for="node-input-discardTestMessages"><i class="fa fa-filter"></i> Ignorovat testovací zprávy (DUH)</label>
-    <input type="checkbox" id="node-input-discardTestMessages" style="width:auto;">
-    <span class="help-block">Pokud je zaškrtnuto, zprávy typu DUH budou ignorovány.</span>
+    <label for="node-input-discardTestMessages"><i class="fa fa-ban"></i> Vyřadit testovací zprávy</label>
+    <input type="checkbox" id="node-input-discardTestMessages">
   </div>
   <div class="form-row">
-    <label for="node-input-zoneMap"><i class="fa fa-list"></i> Mapování zón (JSON)</label>
-    <textarea id="node-input-zoneMap" rows="2" placeholder='{"1": "Sklad", "2": "Kancelář"}'></textarea>
-    <span class="help-block">Zadejte mapování čísel zón na názvy (ve formátu JSON). Např. {"1":"Sklad","2":"Kancelář"}</span>
+    <label for="node-input-ackType"><i class="fa fa-retweet"></i> Typ ACK</label>
+    <select id="node-input-ackType">
+      <option value="A_CRLF">A\r\n (default)</option>
+      <option value="A">A</option>
+      <option value="ACK_CRLF">ACK\r\n</option>
+      <option value="ACK">ACK</option>
+      <option value="ECHO">ECHO (vše)</option>
+      <option value="ECHO_TRIM_END">ECHO (oříznout poslední znak)</option>
+      <option value="ECHO_STRIP_NONPRINT">ECHO (oříznout non-print)</option>
+      <option value="ECHO_TRIM_BOTH">ECHO (trim)</option>
+      <option value="CUSTOM">Vlastní</option>
+      <option value="SIA_PACKET">SIA Packet</option>
+    </select>
+  </div>
+  <div class="form-row" id="ack-custom-row" style="display:none;">
+    <label for="node-input-ackCustom"><i class="fa fa-pencil"></i> Vlastní ACK</label>
+    <input type="text" id="node-input-ackCustom">
+  </div>
+  <div class="form-row">
+    <label for="node-input-periodicReportInterval"><i class="fa fa-clock-o"></i> Perioda reportu (s)</label>
+    <input type="number" id="node-input-periodicReportInterval" min="0" value="0">
+  </div>
+  <div class="form-row">
+    <label for="node-input-heartbeatInterval"><i class="fa fa-heartbeat"></i> Heartbeat interval (s)</label>
+    <input type="number" id="node-input-heartbeatInterval" min="0" value="60">
+  </div>
+  <div class="form-row">
+    <label for="node-input-userId"><i class="fa fa-user"></i> Uživatelské ID</label>
+    <input type="text" id="node-input-userId">
+  </div>
+  <div class="form-row">
+    <label for="node-input-userCode"><i class="fa fa-user-secret"></i> Uživatelský kód</label>
+    <input type="text" id="node-input-userCode">
+  </div>
+  <div class="form-row">
+    <label for="node-input-zoneMap"><i class="fa fa-map"></i> Mapování zón (JSON)</label>
+    <input type="text" id="node-input-zoneMap" placeholder='{"1":"Vstup","2":"Garaz"}'>
   </div>
   <div class="form-row">
     <label for="node-input-userMap"><i class="fa fa-users"></i> Mapování uživatelů (JSON)</label>
-    <textarea id="node-input-userMap" rows="2" placeholder='{"007": "Petr Novák"}'></textarea>
-    <span class="help-block">Zadejte mapování ID uživatelů na jména (ve formátu JSON).</span>
+    <input type="text" id="node-input-userMap" placeholder='{"11":"Martin"}'>
   </div>
   <div class="form-row">
-    <label for="node-input-areaMap"><i class="fa fa-th-large"></i> Mapování oblastí (JSON)</label>
-    <textarea id="node-input-areaMap" rows="2" placeholder='{"1": "Hala"}'></textarea>
-    <span class="help-block">Zadejte mapování čísel oblastí na názvy (ve formátu JSON).</span>
+    <label for="node-input-areaMap"><i class="fa fa-map-marker"></i> Mapování oblastí (JSON)</label>
+    <input type="text" id="node-input-areaMap" placeholder='{"1":"Přízemí"}'>
   </div>
   <div class="form-row">
-    <label for="node-input-periodicReportInterval"><i class="fa fa-clock-o"></i> Periodic Report Interval (s)</label>
-    <input type="number" id="node-input-periodicReportInterval" value="0" min="0">
+    <label for="node-input-externalMappingPath"><i class="fa fa-folder"></i> Externí mapování (cesta)</label>
+    <input type="text" id="node-input-externalMappingPath" placeholder="/path/to/mapping.json">
   </div>
   <div class="form-row">
-    <label for="node-input-externalMappingPath"><i class="fa fa-external-link"></i> Cesta k externímu mapování (volitelné)</label>
-    <input type="text" id="node-input-externalMappingPath" placeholder="/data/sia-mapping.json">
-    <span class="help-block">Pokud je zadáno, bude mapování zón, uživatelů a oblastí načítáno z tohoto souboru při každé zprávě (viz README).</span>
+    <label for="node-input-pin"><i class="fa fa-lock"></i> PIN</label>
+    <input type="password" id="node-input-pin">
   </div>
-</script>
-
-<script type="text/html" data-help-name="galaxy-sia-config">
-  <p>Konfigurační node pro Galaxy Dimension SIA DC-09 komunikaci.</p>
-  <ul>
-    <li><b>Panel IP</b>: IP adresa ústředny Galaxy</li>
-    <li><b>Panel Port</b>: TCP port pro SIA DC-09 komunikaci</li>
-    <li><b>Číslo účtu</b>: Identifikační číslo účtu na ústředně</li>
-    <li><b>ID uživatele</b> a <b>Kód uživatele</b>: Pro vzdálené příkazy</li>
-    <li><b>Mapování zón, uživatelů, oblastí</b>: JSON mapování čísel na jména pro lepší čitelnost</li>
-    <li><b>Externí mapování</b>: Pokud je zadáno, bude načítáno dynamicky z externího souboru (JSON) podle cesty</li>
-    <li><b>Heartbeat interval</b>: Odesílání heartbeat zpráv pro monitoring spojení</li>
-    <li><b>Šifrování</b>: Nastavení pro AES šifrování komunikace</li>
-    <li><b>Ignorovat testovací zprávy</b>: Neposílat dál zprávy typu DUH</li>
-  </ul>
 </script>
