@@ -1,5 +1,6 @@
-// Node-RED konfigurační node pro Galaxy SIA DC-09
 module.exports = function(RED) {
+  // Node-RED konfigurační node pro Galaxy SIA DC-09
+
   function GalaxySIAConfigNode(n) {
     RED.nodes.createNode(this, n);
 
@@ -38,5 +39,6 @@ module.exports = function(RED) {
     // Debug flag
     this.debug = n.debug === true || n.debug === "true";
   }
+
   RED.nodes.registerType("galaxy-sia-config", GalaxySIAConfigNode);
 };
