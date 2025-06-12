@@ -17,10 +17,19 @@ module.exports = function(RED) {
     this.on('close', done => done());
   }
 
-  RED.nodes.registerType('galaxy-sia-disarm', DisarmNode, {
+  RED.nodes.registerType("galaxy-sia-disarm", DisarmNode, {
+    category: "Galaxy SIA Connector",  // Změna kategorie
     defaults: {
-      config: { type: 'galaxy-sia-config', required: true },
-      partition: { value: '1' }
-    }
+      name: { value: "" },
+      config: { type: "galaxy-sia-config", required: true }
+    },
+    color: "#a6d7a8",
+    inputs: 1,
+    outputs: 1,
+    icon: "font-awesome/fa-shield",
+    label: function() {
+      return this.name || "galaxy-sia-disarm";
+    },
+    paletteLabel: "disarm"
   });
 };
