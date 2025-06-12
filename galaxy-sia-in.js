@@ -13,10 +13,10 @@ module.exports = function(RED) {
   // Funkce pro debug log
   function debugLog(node, message, data) {
     if (DEBUG) {
-        node.debug(message + (data ? `: ${JSON.stringify(data)}` : ''));
+      node.debug(message + (data ? `: ${JSON.stringify(data)}` : ''));
     }
   }
-  
+
   function getAckString(cfg, rawStr, node) {
     // Debugování přijaté zprávy
     node.debug(`Processing message for ACK: ${rawStr}`);
@@ -71,9 +71,9 @@ module.exports = function(RED) {
     const crc = parseSIA.siaCRC(body);
     // Upravený formát ACK zprávy
     return `\r\n${len}${body}${crc}\r\n`;  // Změněno pořadí CRC a přidány CRLF na obou koncích
-}
+  }
 
-  function sendAck(socket, ackStr) {
+  function sendAck(node, socket, ackStr) {
     try {
         if (!socket.writable) {
             node.warn("Socket not writable when trying to send ACK");
@@ -173,80 +173,80 @@ module.exports = function(RED) {
       setStatus("client connected");
 
       socket.on("data", function(data) {
-    const rawStr = data.toString();
-    node.debug(`Received raw data: ${rawStr}`);
-    
-    try {
-        // Handshake detekce
-        const h = rawStr.match(/^([FD]#?[0-9A-Za-z]+)[^\r\n]*/);
-        if (h) {
-            const ackStr = getAckString(cfg, h[1], node);
-            sendAck(socket, ackStr);
-            setStatus("handshake");
-            
-            // Rozšířené logování pro handshake
+        const rawStr = data.toString();
+        node.debug(`Received raw data: ${rawStr}`);
+        
+        try {
+            // Handshake detekce
+            const h = rawStr.match(/^([FD]#?[0-9A-Za-z]+)[^\r\n]*/);
+            if (h) {
+                const ackStr = getAckString(cfg, h[1], node);
+                sendAck(node, socket, ackStr);
+                setStatus("handshake");
+                
+                // Rozšířené logování pro handshake
+                node.debug({
+                    event: "handshake",
+                    received: rawStr,
+                    sending: ackStr,
+                    account: h[1].split("#")[1]
+                });
+                
+                node.send([{ 
+                    payload: { 
+                        type: "handshake", 
+                        ack: ackStr, 
+                        raw: rawStr,
+                        account: h[1].split("#")[1],
+                        timestamp: new Date().toISOString()
+                    } 
+                }, null]);
+                return;
+            }
+
+            // Pokud to není handshake, zkusíme parsovat jako SIA zprávu
+            const parsed = parseSIA(
+                rawStr,
+                cfg.siaLevel,
+                cfg.encryption,
+                cfg.encryptionKey,
+                cfg.encryptionHex
+            );
+
+            node.debug(`Parsed SIA message: ${JSON.stringify(parsed)}`);
+
+            if (parsed.valid) {
+                const ackStr = getAckString(cfg, rawStr, node);
+                sendAck(node, socket, ackStr);
+                
+                node.debug({
+                    event: "message",
+                    parsed: parsed,
+                    ack: ackStr
+                });
+                
+                // Odešleme zprávu s daty
+                node.send([{
+                    payload: {
+                        ...parsed,
+                        type: "sia_message",
+                        ack: ackStr,
+                        raw: rawStr,
+                        timestamp: new Date().toISOString()
+                    }
+                }, null]);
+            } else {
+                node.warn(`Invalid message received: ${rawStr}`);
+            }
+        } catch (err) {
+            node.error(`Error processing message: ${err.message}`);
             node.debug({
-                event: "handshake",
-                received: rawStr,
-                sending: ackStr,
-                account: h[1].split("#")[1]
+                event: "error",
+                raw: rawStr,
+                error: err.message
             });
-            
-            node.send([{ 
-                payload: { 
-                    type: "handshake", 
-                    ack: ackStr, 
-                    raw: rawStr,
-                    account: h[1].split("#")[1],
-                    timestamp: new Date().toISOString()
-                } 
-            }, null]);
-            return;
         }
-
-        // Pokud to není handshake, zkusíme parsovat jako SIA zprávu
-        const parsed = parseSIA(
-            rawStr,
-            cfg.siaLevel,
-            cfg.encryption,
-            cfg.encryptionKey,
-            cfg.encryptionHex
-        );
-
-        node.debug(`Parsed SIA message: ${JSON.stringify(parsed)}`);
-
-        if (parsed.valid) {
-            const ackStr = getAckString(cfg, rawStr, node);
-            sendAck(socket, ackStr);
-            
-            node.debug({
-                event: "message",
-                parsed: parsed,
-                ack: ackStr
-            });
-            
-            // Odešleme zprávu s daty
-            node.send([{
-                payload: {
-                    ...parsed,
-                    type: "sia_message",
-                    ack: ackStr,
-                    raw: rawStr,
-                    timestamp: new Date().toISOString()
-                }
-            }, null]);
-        } else {
-            node.warn(`Invalid message received: ${rawStr}`);
-        }
-    } catch (err) {
-        node.error(`Error processing message: ${err.message}`);
-        node.debug({
-            event: "error",
-            raw: rawStr,
-            error: err.message
-        });
-    }
-  });
+      });
 
       socket.on("close", () => {
         setStatus("client disconnected", "yellow", "ring");
