@@ -10,29 +10,40 @@ module.exports = function(RED) {
   const MAX_CONNECTIONS = 20; // Prevent DoS
 
   function getAckString(cfg, rawStr, node) {
-    switch (cfg.ackType) {
-      case "A_CRLF":              return "A\r\n";
-      case "A":                   return "A";
-      case "ACK_CRLF":           return "ACK\r\n";
-      case "ACK":                return "ACK";
-      case "ECHO":               return rawStr;
-      case "ECHO_TRIM_END":      return rawStr.slice(0, -1);
-      case "ECHO_STRIP_NONPRINT": return rawStr.replace(/[\x00-\x1F\x7F]+$/g, "");
-      case "ECHO_TRIM_BOTH":     return rawStr.trim();
-      case "CUSTOM":             return cfg.ackCustom || "";
-      case "SIA_PACKET":         return buildAckPacket(cfg.account);
-      default:
-        if (node) node.warn("Unknown ackType: " + cfg.ackType + ", using 'A\\r\\n'");
-        return "A\r\n";
+    // Pro handshake používáme speciální formát
+    if (rawStr.startsWith("F#") || rawStr.startsWith("D#")) {
+        return "ACK\r\n";  // Pro handshake vždy používáme jednoduchý ACK
     }
-  }
+    
+    switch (cfg.ackType) {
+        case "A_CRLF":              return "A\r\n";
+        case "A":                   return "A";
+        case "ACK_CRLF":           return "ACK\r\n";
+        case "ACK":                return "ACK";
+        case "ECHO":               return rawStr;
+        case "ECHO_TRIM_END":      return rawStr.slice(0, -1);
+        case "ECHO_STRIP_NONPRINT": return rawStr.replace(/[\x00-\x1F\x7F]+$/g, "");
+        case "ECHO_TRIM_BOTH":     return rawStr.trim();
+        case "CUSTOM":             return cfg.ackCustom || "";
+        case "SIA_PACKET":
+            const parsed = parseSIA(rawStr);
+            if (parsed.valid && parsed.seq) {
+                return buildAckPacket(cfg.account, parsed.seq);
+            }
+            return buildAckPacket(cfg.account);
+        default:
+            if (node) node.warn("Unknown ackType: " + cfg.ackType + ", using 'ACK\\r\\n'");
+            return "ACK\r\n";
+    }
+}
 
   function buildAckPacket(account, seq = "00", rcv = "R0", lpref = "L0") {
     const body = `ACK${seq}${rcv}${lpref}#${account}`;
     const len = pad(body.length, 4);
     const crc = parseSIA.siaCRC(body);
-    return `\n${crc}${len}${body}\r`;
-  }
+    // Upravený formát ACK zprávy
+    return `\r\n${len}${body}${crc}\r\n`;  // Změněno pořadí CRC a přidány CRLF na obou koncích
+}
 
   function sendAck(socket, ackStr) {
     if (ackStr.startsWith("\n")) {
@@ -120,78 +131,89 @@ module.exports = function(RED) {
       setStatus("client connected");
 
       socket.on("data", function(data) {
-        const rawStr = data.toString();
-        node.log("RAW SIA MESSAGE: " + rawStr);
+    const rawStr = data.toString();
+    node.log("RAW SIA MESSAGE: " + rawStr);
 
-        try {
-          // Handshake detekce
-          const h = rawStr.match(/^([FD]#?[0-9A-Za-z]+)[^\r\n]*/);
-          if (h) {
+    try {
+        // Handshake detekce
+        const h = rawStr.match(/^([FD]#?[0-9A-Za-z]+)[^\r\n]*/);
+        if (h) {
             const ackStr = getAckString(cfg, h[1], node);
             sendAck(socket, ackStr);
             setStatus("handshake");
-            node.send([{ payload: { type: "handshake", ack: ackStr, raw: rawStr } }, null]);
+            node.debug("Handshake ACK sent: " + ackStr);
+            node.send([{ 
+                payload: { 
+                    type: "handshake", 
+                    ack: ackStr, 
+                    raw: rawStr,
+                    account: h[1].split("#")[1]
+                } 
+            }, null]);
             return;
-          }
+        }
 
-          const parsed = parseSIA(
+        // Parsování SIA zprávy
+        const parsed = parseSIA(
             rawStr,
             cfg.siaLevel,
             cfg.encryption,
             cfg.encryptionKey,
             cfg.encryptionHex
-          );
+        );
 
-          if (cfg.debug) node.debug("SIA PARSED: " + JSON.stringify(parsed));
+        if (cfg.debug) {
+            node.debug("SIA PARSED: " + JSON.stringify(parsed));
+        }
 
-          if (parsed.account !== cfg.account) {
+        // Kontrola účtu
+        if (parsed.account !== cfg.account) {
             node.warn(`SIA: Ignored message with account ${parsed.account} (expected ${cfg.account})`);
             return;
-          }
-
-          // --- DYNAMICKÉ MAPOVÁNÍ ---
-          let zoneMap = cfg.zoneMap, userMap = cfg.userMap, areaMap = cfg.areaMap;
-          if (cfg.externalMappingPath) {
-            const loaded = loadDynamicMapping(cfg.externalMappingPath, node);
-            if (loaded) {
-              zoneMap = loaded.zoneMap || zoneMap;
-              userMap = loaded.userMap || userMap;
-              areaMap = loaded.areaMap || areaMap;
-            }
-          }
-
-          // MAPOVÁNÍ ENTIT
-          let zoneName = parsed.zone && zoneMap ? zoneMap[parsed.zone] : undefined;
-          let userName = parsed.user && userMap ? userMap[parsed.user] : undefined;
-          let areaName = parsed.area && areaMap ? areaMap[parsed.area] : undefined;
-
-          let msgMain = null;
-          if (parsed.valid && (!cfg.discardTestMessages || parsed.code !== "DUH")) {
-            const ackEv = buildAckPacket(cfg.account, parsed.seq);
-            msgMain = { payload: { ...parsed, ack: ackEv, raw: rawStr, zoneName, userName, areaName } };
-            sendAck(socket, ackEv);
-          }
-
-          const msgDebug = {
-            payload: {
-              raw: rawStr,
-              parsed: parsed,
-              ack: msgMain && msgMain.payload.ack ? msgMain.payload.ack : undefined,
-              zoneName, userName, areaName
-            }
-          };
-
-          setStatus(parsed.valid ? "msg OK" : "invalid");
-          node.send([msgMain, msgDebug]);
-        } catch (err) {
-          node.error("Chyba při zpracování zprávy: " + err.message);
-          setStatus("parse error", "red", "ring");
-          node.send([
-            null,
-            { payload: { error: err.message, raw: rawStr } }
-          ]);
         }
-      });
+
+        // Zpracování a odeslání ACK
+        if (parsed.valid) {
+            const ackStr = buildAckPacket(cfg.account, parsed.seq || "00");
+            sendAck(socket, ackStr);
+            node.debug("ACK sent for valid message: " + ackStr);
+            
+            // Vytvoření zprávy s kompletními informacemi
+            let msgMain = {
+                payload: {
+                    ...parsed,
+                    ack: ackStr,
+                    raw: rawStr,
+                    zoneName: parsed.zone && cfg.zoneMap ? cfg.zoneMap[parsed.zone] : undefined,
+                    userName: parsed.user && cfg.userMap ? cfg.userMap[parsed.user] : undefined,
+                    areaName: parsed.area && cfg.areaMap ? cfg.areaMap[parsed.area] : undefined
+                }
+            };
+            
+            setStatus("msg OK");
+            node.send([msgMain, {
+                payload: {
+                    type: "debug",
+                    raw: rawStr,
+                    parsed: parsed,
+                    ack: ackStr
+                }
+            }]);
+        } else {
+            node.warn("Invalid SIA message received");
+            setStatus("invalid message", "yellow", "ring");
+        }
+    } catch (err) {
+        node.error("Error processing message: " + err.message);
+        setStatus("parse error", "red", "ring");
+        node.send([null, { 
+            payload: { 
+                error: err.message, 
+                raw: rawStr 
+            } 
+        }]);
+    }
+});
 
       socket.on("close", () => {
         setStatus("client disconnected", "yellow", "ring");
