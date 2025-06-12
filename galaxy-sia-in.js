@@ -21,8 +21,9 @@ module.exports = function(RED) {
     node.debug(`Processing message for ACK: ${rawStr}`);
     // Pro handshake používáme specifický formát
     if (rawStr.startsWith("F#") || rawStr.startsWith("D#")) {
-      const account = rawStr.split("#")[1].replace(/[^\d]/g, '');
+      const account = (rawStr.split("#")[1] || "").match(/\d+/)?.[0]?.trim() || "";
       const ackBody = `ACK00R0L0#${account}`;
+      node.debug(`ACK BODY: "${ackBody}", length: ${ackBody.length}, bytes: ${[...Buffer.from(ackBody)]}`);
       // Délka těla ACK vždy 4 číslice
       const len = ackBody.length.toString().padStart(4, '0');
       // SIA CRC vždy 4 znaky HEX (DC-09 standard)
