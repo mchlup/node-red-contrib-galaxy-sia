@@ -23,12 +23,11 @@ module.exports = function(RED) {
     if (rawStr.startsWith("F#") || rawStr.startsWith("D#")) {
       const account = rawStr.split("#")[1].replace(/[^\d]/g, '');
       const ackBody = `ACK00R0L0#${account}`;
-      // Vždy 4 číslice délky dle DC-09
+      // Délka těla ACK vždy 4 číslice
       const len = ackBody.length.toString().padStart(4, '0');
-      // SIA CRC musí být pouze 2 znaky HEX
+      // SIA CRC vždy 4 znaky HEX (DC-09 standard)
       let crc = parseSIA.siaCRC(ackBody);
-      if (typeof crc === "number") crc = crc.toString(16).toUpperCase().padStart(2, "0");
-      if (crc.length > 2) crc = crc.slice(0, 2);
+      // Nikdy nezkracovat na 2 znaky!
       const ackStr = `\r\n${len}${ackBody}${crc}\r\n`;
       node.debug(`Sending handshake ACK: ${ackStr}`);
       return ackStr;
@@ -42,8 +41,6 @@ module.exports = function(RED) {
             const ackBody = `ACK${parsed.seq || "00"}R0L0#${parsed.account}`;
             const len = pad(ackBody.length, 4);
             let crc = parseSIA.siaCRC(ackBody);
-            if (typeof crc === "number") crc = crc.toString(16).toUpperCase().padStart(2, "0");
-            if (crc.length > 2) crc = crc.slice(0, 2);
             return `\r\n${len}${ackBody}${crc}\r\n`;
           }
         } catch (e) {
@@ -71,9 +68,6 @@ module.exports = function(RED) {
     const body = `ACK${seq}${rcv}${lpref}#${account}`;
     const len = pad(body.length, 4);
     let crc = parseSIA.siaCRC(body);
-    if (typeof crc === "number") crc = crc.toString(16).toUpperCase().padStart(2, "0");
-    if (crc.length > 2) crc = crc.slice(0, 2);
-    // Upravený formát ACK zprávy
     return `\r\n${len}${body}${crc}\r\n`;
   }
 
@@ -148,7 +142,8 @@ module.exports = function(RED) {
         heartbeatTimer = setInterval(() => {
           sockets.forEach(socket => {
             if (socket.writable) {
-              socket.write(HEARTBEAT_PAYLOAD);
+              // POZOR: Pro správnou SIA zprávu použijte správný SIA packet (např. DUH), ne prostý text!
+              // socket.write(HEARTBEAT_PAYLOAD);
             }
           });
           setStatus("heartbeat sent", "blue", "ring");
@@ -179,7 +174,7 @@ module.exports = function(RED) {
       socket.on("data", function(data) {
         const rawStr = data.toString();
         node.debug(`Received raw data: ${rawStr}`);
-
+        
         try {
           // Handshake detekce
           const h = rawStr.match(/^([FD]#?[0-9A-Za-z]+)[^\r\n]*/);
@@ -344,7 +339,7 @@ module.exports = function(RED) {
 
   // Registrace typu nodu - upravená kategorie
   RED.nodes.registerType("galaxy-sia-in", GalaxySIAInNode, {
-    category: "Galaxy SIA Connector",  // Změna kategorie
+    category: "Galaxy SIA Connector",
     defaults: {
       name: { value: "" },
       config: { type: "galaxy-sia-config", required: true }
