@@ -1,118 +1,177 @@
-// galaxy-sia-node-red-node.js
-// Node-RED custom node: Galaxy SIA DC-09 connector for Honeywell Galaxy Dimension
-// - Správné odesílání ACK (14 bytů, CRC)
-// - Handshake, Inquiry polling, ACK eventů
-// - Konfigurace portu, account, polling interval
+// galaxy-sia-in.js
+// Node-RED custom node: Galaxy Dimension SIA DC-09 connector
+// - Správné odesílání 14b ACK (CRC) pro handshake i eventy
+// - Pravidelné inquiry polling pro získání stavových zpráv
 
 module.exports = function(RED) {
-    const net = require('net');
-    const parseSIA = require('./lib/sia-parser');
-    const siaCRC = parseSIA.siaCRC;
-    const pad = parseSIA.pad;
+  const DEBUG = true;
+  const net = require("net");
+  const fs = require("fs");
+  const parseSIA = require("./lib/sia-parser");
+  const siaCRC = parseSIA.siaCRC;
+  const pad = parseSIA.pad;
 
-    function GalaxySiaNode(config) {
-        RED.nodes.createNode(this, config);
-        const node = this;
-        const port = parseInt(config.port) || 10002;
-        const account = config.account || '';
-        const pollInterval = parseInt(config.pollInterval) || 10; // seconds
+  // Konstanty
+  const ACK_BODY_LENGTH = 14;       // tělo ACK musí mít vždy 14 znaků
+  const ACCOUNT_PAD_LENGTH = 4;     // suffix účtu 4 znaky
+  const INQ_INTERVAL_DEFAULT = 10;  // výchozí polling interval v sekundách
+  const MAX_CONNECTIONS = 20;       // limit připojení
 
-        let server = null;
+  function debugLog(node, message, data) {
+    if (DEBUG) node.debug(message + (data ? `: ${JSON.stringify(data)}` : ''));
+  }
 
-        // Build ACK packet: 14 byte body, 4-byte length prefix, CRC, CRLF
-        function buildAck(account, seq = '00', rcv = 'R0', lp = 'L0') {
-            const acct = account.toString().padStart(4, '0').slice(-4);
-            const body = `ACK${seq}${rcv}${lp}#${acct}`;
-            const len = pad(body.length, 4); // always '0014'
-            const crc = siaCRC(body);
-            return `\r\n${len}${body}${crc}\r\n`;
-        }
+  // Vytvoří 14b ACK paket s prefixem délky a CRC
+  function buildAckPacket(account, seq = "00", rcv = "R0", lpref = "L0") {
+    const acct = account.toString().padStart(ACCOUNT_PAD_LENGTH, '0').slice(-ACCOUNT_PAD_LENGTH);
+    const ackBody = `ACK${seq}${rcv}${lpref}#${acct}`;
+    if (ackBody.length !== ACK_BODY_LENGTH) {
+      console.warn(`ACK BODY length is NOT ${ACK_BODY_LENGTH}: ${ackBody.length} [${ackBody}]`);
+    }
+    const len = pad(ACK_BODY_LENGTH, 4); // always '0014'
+    const crc = siaCRC(ackBody);
+    return `\r\n${len}${ackBody}${crc}\r\n`;
+  }
 
-        // Build Inquiry packet: 'I' + account + ',' + seq + ',00' + CRLF
-        function buildInquiry(account, seq) {
-            const acct = account.toString();
-            const seqStr = seq.toString().padStart(4, '0');
-            return `I${acct},${seqStr},00\r\n`;
-        }
+  // Vytvoří inquiry dotaz: I<account>,<seq4>,00 + CRLF
+  function buildInquiry(account, seq) {
+    const acct = account.toString();
+    const seqStr = seq.toString().padStart(4, '0');
+    return `I${acct},${seqStr},00\r\n`;
+  }
 
-        server = net.createServer(socket => {
-            node.log(`Client connected from ${socket.remoteAddress}:${socket.remotePort}`);
-            let inquirySeq = 1;
-            let pollTimer = null;
+  // Hlavní třída uzlu
+  function GalaxySIAInNode(config) {
+    RED.nodes.createNode(this, config);
+    const node = this;
 
-            // Start polling after handshake
-            function startPolling() {
-                if (pollTimer) clearInterval(pollTimer);
-                pollTimer = setInterval(() => {
-                    const inq = buildInquiry(account, inquirySeq);
-                    socket.write(inq);
-                    node.debug(`Sent inquiry: ${inq.trim()}`);
-                    inquirySeq = (inquirySeq % 9999) + 1;
-                }, pollInterval * 1000);
-            }
-
-            socket.on('data', data => {
-                const raw = data.toString('ascii');
-                // Sestřih CRLF
-                const lines = raw.split(/\r?\n/).filter(l => l);
-                lines.forEach(line => {
-                    // předpoklad formátu: [len][body][CRC]
-                    let payload = { raw: line };
-                    try {
-                        const parsed = parseSIA(line);
-                        payload = Object.assign(payload, parsed);
-                    } catch(e) {
-                        payload.type = 'unknown';
-                    }
-
-                    // Handshake detection: F#... nebo D#...
-                    if (/^([FD]#?\d+)/.test(line)) {
-                        payload.type = 'handshake';
-                        node.debug(`Handshake from panel: ${line}`);
-                        // send ACK
-                        const ack = buildAck(account);
-                        socket.write(ack);
-                        node.debug(`Sent handshake ACK: ${ack.trim()}`);
-                        // start polling inquiries
-                        startPolling();
-                    } else if (payload.type === 'event' || payload.type === 'status' || payload.type === 'null') {
-                        // send ACK to event/status/null
-                        const ack = buildAck(account, payload.seq || '00');
-                        socket.write(ack);
-                        node.debug(`Sent event ACK: ${ack.trim()}`);
-                    }
-
-                    // emit message
-                    node.send({ payload });
-                });
-            });
-
-            socket.on('close', () => {
-                node.log('Client disconnected');
-                if (pollTimer) clearInterval(pollTimer);
-            });
-
-            socket.on('error', err => {
-                node.error(`Socket error: ${err.message}`);
-            });
-        }).listen(port, () => {
-            node.log(`Galaxy SIA DC-09 listening on port ${port}`);
-        });
-
-        node.on('close', done => {
-            if (server) {
-                node.log('Closing SIA server');
-                server.close(done);
-            } else done();
-        });
+    // Konfigurační uzel
+    const cfg = RED.nodes.getNode(config.config);
+    if (!cfg || !cfg.panelPort || !cfg.account) {
+      node.error("Neplatná konfigurace: chybí panelPort nebo account");
+      node.status({fill:"red",shape:"ring",text:"špatná konfigurace"});
+      return;
     }
 
-    RED.nodes.registerType('galaxy-sia-in', GalaxySiaNode, {
-        defaults: {
-            name: { value: '' },
-            port: { value: 10002, required: true },
-            account: { value: '', required: true },
-            pollInterval: { value: 10 }
-        }
+    let server = null;
+
+    function setStatus(text, color = 'green', shape = 'dot') {
+      node.status({ fill: color, shape: shape, text: text });
+    }
+
+    // Ošetření jedné klientské socket komunikace
+    function handleSocket(socket) {
+      if (server.connections > MAX_CONNECTIONS) {
+        socket.destroy();
+        node.warn("Překročen maximální počet spojení");
+        return;
+      }
+
+      let pollTimer = null;
+      let inquirySeq = 1;
+
+      function startPolling() {
+        stopPolling();
+        const interval = Number(cfg.pollInterval) || INQ_INTERVAL_DEFAULT;
+        pollTimer = setInterval(() => {
+          const inq = buildInquiry(cfg.account, inquirySeq);
+          socket.write(inq);
+          debugLog(node, `Sent inquiry`, inq.trim());
+          inquirySeq = (inquirySeq % 9999) + 1;
+        }, interval * 1000);
+        setStatus(`polling every ${interval}s`, 'blue', 'ring');
+      }
+      function stopPolling() {
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      }
+
+      socket.on('data', data => {
+        const raw = data.toString('ascii');
+        debugLog(node, 'Received raw data', raw);
+
+        // Rozdělíme na řádky (CRLF)
+        const parts = raw.split(/\r?\n/).filter(l => l);
+        parts.forEach(line => {
+          // Handshake (F#... / D#...)
+          const hs = line.match(/^([FD]#?[0-9A-Za-z]+)/);
+          if (hs) {
+            const account = hs[1].split('#')[1];
+            const ack = buildAckPacket(account);
+            socket.write(ack);
+            debugLog(node, 'Sent handshake ACK', ack.trim());
+            setStatus('handshake');
+
+            node.send({
+              topic: 'handshake',
+              payload: { type: 'handshake', raw: line, ack: ack, account: account, timestamp: new Date().toISOString() }
+            });
+
+            // Spustíme polling dotazů
+            startPolling();
+            return;
+          }
+
+          // Pokus o parsování SIA event/status/null
+          let parsed;
+          try {
+            parsed = parseSIA(line, cfg.siaLevel, cfg.encryption, cfg.encryptionKey, cfg.encryptionHex);
+          } catch(err) {
+            node.warn(`Nepodařilo se parsovat: ${err.message}`);
+            return;
+          }
+
+          if (parsed.valid) {
+            // ACK eventu
+            const seq = parsed.seq || '00';
+            const ack = buildAckPacket(parsed.account, seq);
+            socket.write(ack);
+            debugLog(node, 'Sent event ACK', ack.trim());
+
+            // Emit event
+            node.send({
+              topic: parsed.eventType || 'sia_event',
+              payload: { ...parsed, raw: line, ack: ack, timestamp: new Date().toISOString() }
+            });
+          } else {
+            node.warn(`Neplatný SIA paket: ${line}`);
+          }
+        });
+      });
+
+      socket.on('close', () => {
+        stopPolling();
+        setStatus('disconnected', 'yellow', 'ring');
+      });
+      socket.on('error', err => {
+        stopPolling();
+        node.error(`Socket error: ${err.message}`);
+        setStatus('socket error', 'red', 'ring');
+      });
+    }
+
+    // Start TCP server
+    function startServer() {
+      server = net.createServer(handleSocket);
+      server.maxConnections = MAX_CONNECTIONS;
+      server.listen(cfg.panelPort, () => {
+        node.log(`Listening on port ${cfg.panelPort}`);
+        setStatus('listening');
+      });
+      server.on('error', err => {
+        node.error(`Server error: ${err.message}`);
+        setStatus('server error', 'red', 'dot');
+      });
+    }
+
+    // Stop server on close
+    this.on('close', done => {
+      if (server) {
+        server.close(() => done());
+      } else done();
     });
+
+    startServer();
+  }
+
+  RED.nodes.registerType('galaxy-sia-in', GalaxySIAInNode);
 };
