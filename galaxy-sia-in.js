@@ -3,7 +3,7 @@ module.exports = function(RED) {
   const net = require("net");
   const fs = require("fs");
   const parseSIA = require("./lib/sia-parser");
-
+  const siaCRC = parseSIA.siaCRC;  // Add this line to properly import siaCRC
   const pad = parseSIA.pad;
 
   const HEARTBEAT_PAYLOAD = "HEARTBEAT";
