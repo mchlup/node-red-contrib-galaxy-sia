@@ -17,23 +17,21 @@ module.exports = function(RED) {
     }
   }
 
-  function buildAckPacket(account, seq = "00", rcv = "R0", lpref = "L0") {
-    // 1. Vytvoříme základní ACK zprávu bez CR/LF
-      // const ackBody = `ACK${seq}${rcv}${lpref}#${account}`;
-    // Podle SIA DC-09 stačí: "ACK" + seq + "#" + account
-    const ackBody = `ACK${seq}#${account}`;
+  function buildAckPacket(account, seq = "00") {
+    // 1. Vytvoříme základní ACK zprávu podle specifikace SIA DC-09
+    // Format: ACKssaaaaaaa (bez #)
+    const ackBody = `ACK${seq}${account}`;
     
-    // 2. Spočítáme skutečnou délku těla zprávy BEZ CR/LF
+    // 2. Spočítáme skutečnou délku těla zprávy
     const bodyLength = Buffer.from(ackBody).length;
     
     // 3. Vytvoříme padding délky na 4 znaky
     const lenStr = pad(bodyLength, 4);
     
-    // 4. Vypočítáme CRC z těla zprávy (pouze z ackBody, ne z celé zprávy)
+    // 4. Vypočítáme CRC z těla zprávy
     const crc = siaCRC(ackBody);
     
     // 5. Sestavíme finální zprávu s CR/LF
-    // Důležité: CR (\r) = hex 0D, LF (\n) = hex 0A
     const finalPacket = `\r\n${lenStr}${ackBody}${crc}\r\n`;
     
     // Debug log pro kontrolu výsledné zprávy
@@ -48,50 +46,45 @@ module.exports = function(RED) {
     }
     
     return finalPacket;
-  }
+}
 
   function getAckString(cfg, rawStr, node) {
-    // Debug logging pro analýzu vstupních dat
     if (node && cfg.debug) {
-      node.debug(`Raw ACK input: ${Buffer.from(rawStr).toString('hex')}`);
+        node.debug(`Raw ACK input: ${Buffer.from(rawStr).toString('hex')}`);
     }
     
     // Handshake detekce a zpracování
     if (rawStr.startsWith("F#") || rawStr.startsWith("D#")) {
-      try {
-        // Extrahujeme account číslo
-        const account = rawStr.split("#")[1].replace(/[^\d]/g, '');
-        
-        // Vytvoříme standardizovaný ACK packet
-        //const ackStr = buildAckPacket(account);
-        const ackStr = buildAckPacket(account, "00");
-        
-        // Debug logging
-        if (node && cfg.debug) {
-          node.debug(`Handshake ACK generated: ${Buffer.from(ackStr).toString('hex')}`);
-          node.debug(`ACK length check: ${ackStr.length}`);
-          node.debug(`ACK parts: ${JSON.stringify({
-            account: account,
-            rawLength: rawStr.length,
-            ackLength: ackStr.length,
-            hexDump: Buffer.from(ackStr).toString('hex')
-          })}`);
+        try {
+            // Extrahujeme account číslo bez #
+            const account = rawStr.split("#")[1].replace(/[^\d]/g, '');
+            // Pro handshake použijeme seq="00"
+            const ackStr = buildAckPacket(account, "00");
+            
+            if (node && cfg.debug) {
+                node.debug(`Handshake ACK generated: ${Buffer.from(ackStr).toString('hex')}`);
+            }
+            
+            return ackStr;
+        } catch (err) {
+            if (node) node.error(`Error creating handshake ACK: ${err.message}`);
+            return "ACK\r\n";
         }
-        
-        return ackStr;
-      } catch (err) {
-        if (node) node.error(`Error creating handshake ACK: ${err.message}`);
-        return "ACK\r\n"; // Fallback response
-      }
     }
     
     // Zpracování ostatních typů ACK
     switch (cfg.ackType) {
-      case "SIA_PACKET":
-        try {
-          const parsed = parseSIA(rawStr);
-          if (parsed.valid) {
-            return buildAckPacket(parsed.account, parsed.seq || "00");
+        case "SIA_PACKET":
+            try {
+                const parsed = parseSIA(rawStr);
+                if (parsed.valid) {
+                    // Použijeme sekvenční číslo z příchozí zprávy
+                    return buildAckPacket(parsed.account, parsed.seq || "00");
+                }
+            } catch (e) {
+                if (node) node.warn(`Error creating SIA ACK packet: ${e.message}`);
+            }
+            return buildAckPacket(cfg.account, "00");
           }
         } catch (e) {
           if (node) node.warn(`Error creating SIA ACK packet: ${e.message}`);
