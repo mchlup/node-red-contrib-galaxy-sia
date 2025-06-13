@@ -17,74 +17,65 @@ module.exports = function(RED) {
     }
   }
 
+  // Sestavení SIA DC-09 ACK packetu (vždy 14 znaků v těle)
   function buildAckPacket(account, seq = "00", rcv = "R0", lpref = "L0") {
-    // 1. Vytvoříme základní ACK zprávu bez zbytečných parametrů
-    // Podle SIA DC-09 stačí: "ACK" + seq + "#" + account
-    const ackBody = `ACK${seq}#${account}`;
-        
-    // 2. Spočítáme skutečnou délku těla zprávy
-    const bodyLength = Buffer.from(ackBody).length;
-    
-    // 3. Vytvoříme padding délky na 4 znaky
+    // Správné tělo ACK: "ACK" + seq + rcv + lpref + "#" + account (délka 14)
+    const ackBody = `ACK${seq}${rcv}${lpref}#${account}`;
+    const bodyLength = Buffer.from(ackBody, 'ascii').length;
     const lenStr = pad(bodyLength, 4);
-    
-    // 4. Vypočítáme CRC z těla zprávy
     const crc = siaCRC(ackBody);
-    
-    // 5. Sestavíme finální zprávu s CR/LF
     const finalPacket = `\r\n${lenStr}${ackBody}${crc}\r\n`;
-    
-    // Debug log pro kontrolu výsledné zprávy
     if (DEBUG) {
-        console.log('ACK packet components:', {
-            ackBody,
-            bodyLength,
-            lenStr,
-            crc,
-            finalHex: Buffer.from(finalPacket).toString('hex')
-        });
+      console.log('ACK packet components:', {
+        ackBody,
+        bodyLength,
+        lenStr,
+        crc,
+        finalHex: Buffer.from(finalPacket, 'ascii').toString('hex')
+      });
     }
-    
     return finalPacket;
   }
 
+  // Vytvoření ACK stringu podle přijaté zprávy (handshake, běžné ACK, ...)
   function getAckString(cfg, rawStr, node) {
     node.debug(`Processing message for ACK: ${rawStr}`);
-    // Pro handshake používáme specifický formát podle DC-09!
+    // Handshake: vždy ACK00R0L0#account
     if (rawStr.startsWith("F#") || rawStr.startsWith("D#")) {
       const seq = "00";
       const account = (rawStr.split("#")[1] || "").match(/\d+/)?.[0] || "";
-      const ackBody = `ACK${seq}#${account}`;
-      node.debug(`ACK BODY: "${ackBody}", length: ${ackBody.length}, bytes: ${Buffer.from(ackBody).length}`);
-      if (Buffer.from(ackBody).length !== 14) {
-          node.warn(`ACK BODY length is NOT 14: ${Buffer.from(ackBody).length} [${ackBody}]`);
+      const ackBody = `ACK${seq}R0L0#${account}`;
+      const bodyLength = Buffer.from(ackBody, 'ascii').length;
+      node.debug(`ACK BODY: "${ackBody}", length: ${ackBody.length}, bytes: ${bodyLength}`);
+      if (bodyLength !== 14) {
+        node.warn(`ACK BODY length is NOT 14: ${bodyLength} [${ackBody}]`);
       }
-      const len = pad(Buffer.from(ackBody).length, 4);
+      const len = pad(bodyLength, 4);
       const crc = siaCRC(ackBody);
       const ackStr = `\r\n${len}${ackBody}${crc}\r\n`;
       node.debug(`Sending handshake ACK: ${ackStr}`);
       return ackStr;
     }
 
-    // Ostatní typy ACK zůstávají stejné
+    // Ostatní typy ACK
     switch (cfg.ackType) {
       case "SIA_PACKET":
         try {
           const parsed = parseSIA(rawStr);
           if (parsed.valid) {
-            const ackBody = `ACK${parsed.seq || "00"}#${parsed.account}`;
-            node.debug(`ACK BODY: "${ackBody}", length: ${ackBody.length}, bytes: ${Buffer.from(ackBody).length}`);
-            if (Buffer.from(ackBody).length !== 14) {
-                node.warn(`ACK BODY length is NOT 14: ${Buffer.from(ackBody).length} [${ackBody}]`);
+            const ackBody = `ACK${parsed.seq || "00"}R0L0#${parsed.account}`;
+            const bodyLength = Buffer.from(ackBody, 'ascii').length;
+            node.debug(`ACK BODY: "${ackBody}", length: ${ackBody.length}, bytes: ${bodyLength}`);
+            if (bodyLength !== 14) {
+              node.warn(`ACK BODY length is NOT 14: ${bodyLength} [${ackBody}]`);
             }
-            const len = pad(Buffer.from(ackBody).length, 4);
+            const len = pad(bodyLength, 4);
             let crc = siaCRC(ackBody);
             return `\r\n${len}${ackBody}${crc}\r\n`;
           }
         } catch (e) {
           node.warn("Error creating SIA ACK packet: " + e.message);
         }
-        // Fallback to simple ACK if parsing fails
         return "ACK\r\n";
 
       case "A_CRLF":              return "A\r\n";
@@ -96,17 +87,14 @@ module.exports = function(RED) {
     }
   }
 
+  // Odeslání ACK na socket
   function sendAck(socket, ackStr, node) {
     if (!socket || !socket.writable) {
       if (node) node.warn("Socket není připraven pro odeslání ACK");
       return;
     }
     try {
-      // Převedeme string na Buffer, použijeme 'ascii' místo 'binary'
-      // pro lepší zacházení s kontrolními znaky
       const ackBuffer = Buffer.from(ackStr, 'ascii');
-        //const ackBuffer = Buffer.from(ackStr, "binary");
-      // Debug logging před odesláním
       if (node && node.config && node.config.debug) {
         node.debug(`Sending ACK (${ackBuffer.length} bytes): ${ackBuffer.toString('hex')}`);
       }
@@ -142,7 +130,6 @@ module.exports = function(RED) {
       return;
     }
 
-    // Ověření požadovaných konfiguračních hodnot
     if (!cfg.panelPort || !cfg.account) {
       node.error("Chybí povinné konfigurační hodnoty (port nebo account)");
       node.status({fill:"red", shape:"ring", text:"neplatná konfigurace"});
@@ -243,7 +230,6 @@ module.exports = function(RED) {
               ack: ackStr
             });
 
-            // Odešleme zprávu s daty
             node.send([{
               payload: {
                 ...parsed,
@@ -317,7 +303,6 @@ module.exports = function(RED) {
         if (done) done();
       }
 
-      // Cleanup all sockets
       sockets.forEach(s => {
         try {
           if (!s.destroyed) {
@@ -331,20 +316,17 @@ module.exports = function(RED) {
       setStatus("stopped", "grey", "ring");
     }
 
-    // Spuštění serveru při inicializaci
     startServer();
 
-    // Cleanup při zavření nodu
     this.on("close", function(removed, done) {
       stopServer(() => {
         if (removed) {
-          // Zde můžeme přidat další cleanup pokud je potřeba
+          // Extra cleanup pokud bude potřeba
         }
         done();
       });
     });
   }
 
-  // Registrace typu nodu
   RED.nodes.registerType("galaxy-sia-in", GalaxySIAInNode);
 };
