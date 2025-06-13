@@ -1,7 +1,7 @@
 module.exports = function(RED) {
     function GalaxySiaConfigNode(config) {
         RED.nodes.createNode(this, config);
-        // Store all configuration values
+
         this.name = config.name || "";
         this.panelIP = config.panelIP;
         this.panelPort = config.panelPort;
@@ -22,14 +22,19 @@ module.exports = function(RED) {
         this.areaMap = config.areaMap;
         this.externalMappingPath = config.externalMappingPath;
         this.debug = config.debug || false;
+        // nové DC-09 volby:
         this.ackCrcFormat = config.ackCrcFormat || "hex";
+        this.ackAccountFormat = config.ackAccountFormat || "last4";
+        this.ackCrlf = (config.ackCrlf !== false);
+        this.disableNagle = (config.disableNagle !== false);
         this.pollingType = config.pollingType || "inquiry";
-        this.ackFullAccount = config.ackFullAccount || false;
-        this.ackAlwaysCRLF = config.ackAlwaysCRLF !== false; // default true
+
+        // Properly handle credentials
         if (this.credentials) {
             this.pin = this.credentials.pin;
         }
     }
+
     RED.nodes.registerType("galaxy-sia-config", GalaxySiaConfigNode, {
         credentials: {
             pin: {type: "password"}
