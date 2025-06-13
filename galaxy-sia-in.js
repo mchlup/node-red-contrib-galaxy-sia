@@ -1,3 +1,10 @@
+// galaxy-sia-in.js
+// Node-RED custom node: Galaxy Dimension SIA DC-09 connector
+// - Správné odesílání 14b ACK (CRC) pro handshake i eventy
+// - Inquiry polling pro získání stavových zpráv
+// - Keepalive (heartbeat) na základě příchozích Null zpráv
+// - Dynamické mapování eventů z externího JSON
+
 module.exports = function(RED) {
     const DEBUG = true;
     const net = require("net");
@@ -7,84 +14,53 @@ module.exports = function(RED) {
     const pad = parseSIA.pad;
 
     // Konstanty
-    const HEARTBEAT_INTERVAL_DEFAULT = 60; // seconds
-    const MAX_CONNECTIONS = 20; // Prevent DoS
-    const POLLING_INTERVAL_DEFAULT = 10; // seconds
+    const MAX_CONNECTIONS = 20;
+    const POLLING_INTERVAL_DEFAULT = 10;  // sec
     const POLLING_SEQ_START = 1;
     const POLLING_SEQ_MAX = 9999;
+    const HEARTBEAT_INTERVAL_DEFAULT = 60; // sec
+    const ACK_BODY_LENGTH = 14;
+    const ACCOUNT_PAD_LENGTH = 4;
+    const HEARTBEAT_PAYLOAD = "\r\n0000#\r\n";  // Null zpráva od panelu není odesílána, ale tento payload lze použít
 
-    // Funkce pro debug log
     function debugLog(node, message, data) {
         if (DEBUG) {
             node.debug(message + (data ? `: ${JSON.stringify(data)}` : ''));
         }
     }
 
-    function buildAckPacket(account, seq = "00") {
-        // 1. Vytvoříme základní ACK zprávu podle specifikace SIA DC-09
-        // Format: ACKssaaaaaaa (bez #)
-        const ackBody = `ACK${seq}${account}`;
-        
-        // 2. Spočítáme skutečnou délku těla zprávy
-        const bodyLength = Buffer.from(ackBody).length;
-        
-        // 3. Vytvoříme padding délky na 4 znaky
-        const lenStr = pad(bodyLength, 4);
-        
-        // 4. Vypočítáme CRC z těla zprávy
+    // Sestaví SIA DC-09 ACK paket: \r\n + 4B len + 14B body + 4B CRC + \r\n
+    function buildAckPacket(account, seq = "00", rcv = "R0", lpref = "L0") {
+        const acct = account.toString().padStart(ACCOUNT_PAD_LENGTH, '0').slice(-ACCOUNT_PAD_LENGTH);
+        const ackBody = `ACK${seq}${rcv}${lpref}#${acct}`;
+        if (ackBody.length !== ACK_BODY_LENGTH) {
+            console.warn(`ACK BODY length is NOT ${ACK_BODY_LENGTH}: ${ackBody.length} [${ackBody}]`);
+        }
+        const lenStr = pad(ACK_BODY_LENGTH, 4);
         const crc = siaCRC(ackBody);
-        
-        // 5. Sestavíme finální zprávu s CR/LF
-        const finalPacket = `\r\n${lenStr}${ackBody}${crc}\r\n`;
-        
-        // Debug log pro kontrolu výsledné zprávy
-        if (DEBUG) {
-            console.log('ACK packet components:', {
-                ackBody,
-                bodyLength,
-                lenStr,
-                crc,
-                finalHex: Buffer.from(finalPacket).toString('hex')
-            });
-        }
-        
-        return finalPacket;
+        const packet = `\r\n${lenStr}${ackBody}${crc}\r\n`;
+        debugLog(null, 'Built ACK packet', { packet, bytes: packet.length });
+        return packet;
     }
 
+    // Inquiry: I<account>,<seq4>,00\r\n
     function buildInquiryPacket(account, seq) {
-        // Formát podle SIA DC-09: I<account>,<seq>,00
         const seqStr = seq.toString().padStart(4, '0');
-        const inquiryBody = `I${account},${seqStr},00`;
-        
-        // Přidáme CRLF na konec
-        return `${inquiryBody}\r\n`;
+        return `I${account},${seqStr},00\r\n`;
     }
 
+    // Generování ACK string podle typu cfg.ackType
     function getAckString(cfg, rawStr, node) {
-        if (node && cfg.debug) {
-            node.debug(`Raw ACK input: ${Buffer.from(rawStr).toString('hex')}`);
-        }
-        
-        // Handshake detekce a zpracování
-        if (rawStr.startsWith("F#") || rawStr.startsWith("D#")) {
+        // handshake
+        if (/^[FD]#?\d+/.test(rawStr)) {
             try {
-                // Extrahujeme account číslo bez #
-                const account = rawStr.split("#")[1].replace(/[^\d]/g, '');
-                // Pro handshake použijeme seq="00"
-                const ackStr = buildAckPacket(account, "00");
-                
-                if (node && cfg.debug) {
-                    node.debug(`Handshake ACK generated: ${Buffer.from(ackStr).toString('hex')}`);
-                }
-                
-                return ackStr;
+                const account = rawStr.split('#')[1].replace(/\D/g, '');
+                return buildAckPacket(account, "00");
             } catch (err) {
-                if (node) node.error(`Error creating handshake ACK: ${err.message}`);
+                if (node) node.error(`Handshake ACK error: ${err.message}`);
                 return "ACK\r\n";
             }
         }
-        
-        // Zpracování ostatních typů ACK
         switch (cfg.ackType) {
             case "SIA_PACKET":
                 try {
@@ -93,54 +69,46 @@ module.exports = function(RED) {
                         return buildAckPacket(parsed.account, parsed.seq || "00");
                     }
                 } catch (e) {
-                    if (node) node.warn(`Error creating SIA ACK packet: ${e.message}`);
+                    if (node) node.warn(`SIA_PACKET ACK error: ${e.message}`);
                 }
                 return buildAckPacket(cfg.account, "00");
-                
-            case "A_CRLF":              return "A\r\n";
-            case "A":                   return "A";
-            case "ACK_CRLF":           return "ACK\r\n";
-            case "ACK":                return "ACK";
-            case "ECHO":               return rawStr;
-            case "ECHO_TRIM_END":      return rawStr.slice(0, -1);
+            case "A_CRLF":            return "A\r\n";
+            case "A":                 return "A";
+            case "ACK_CRLF":         return "ACK\r\n";
+            case "ACK":              return "ACK";
+            case "ECHO":             return rawStr;
+            case "ECHO_TRIM_END":    return rawStr.slice(0, -1);
             case "ECHO_STRIP_NONPRINT": return rawStr.replace(/[\x00-\x1F\x7F]+$/g, "");
-            case "ECHO_TRIM_BOTH":     return rawStr.trim();
-            case "CUSTOM":             return cfg.ackCustom || "";
+            case "ECHO_TRIM_BOTH":   return rawStr.trim();
+            case "CUSTOM":           return cfg.ackCustom || "";
             default:
-                if (node) node.warn(`Unknown ackType: ${cfg.ackType}, using 'ACK\\r\\n'`);
+                if (node) node.warn(`Unknown ackType ${cfg.ackType}, defaulting to ACK\r\n`);
                 return "ACK\r\n";
         }
     }
 
+    // Odeslání ACK na socket
     function sendAck(socket, ackStr, node) {
         if (!socket || !socket.writable) {
-            if (node) node.warn("Socket není připraven pro odeslání ACK");
+            if (node) node.warn("Socket not writable for ACK");
             return;
         }
-
         try {
-            const ackBuffer = Buffer.from(ackStr, 'ascii');
-            
-            if (node && node.config && node.config.debug) {
-                node.debug(`Sending ACK (${ackBuffer.length} bytes): ${ackBuffer.toString('hex')}`);
-            }
-            
-            socket.write(ackBuffer);
-        } catch (err) {
-            if (node) node.error(`Error sending ACK: ${err.message}`);
+            socket.write(Buffer.from(ackStr, 'ascii'));
+            debugLog(node, `Sent ACK (${ackStr.length}B)`);
+        } catch (e) {
+            if (node) node.error(`sendAck error: ${e.message}`);
         }
     }
 
+    // Načtení externího mapování eventů
     function loadDynamicMapping(path, node) {
         try {
-            if (!path) return null;
-            if (!fs.existsSync(path)) return null;
-            const content = fs.readFileSync(path, "utf-8");
-            const parsed = JSON.parse(content);
-            if (typeof parsed !== "object") throw new Error("Externí mapování není objekt");
-            return parsed;
+            if (!path || !fs.existsSync(path)) return null;
+            const data = fs.readFileSync(path, 'utf-8');
+            return JSON.parse(data);
         } catch (e) {
-            if (node) node.warn("Nepodařilo se načíst externí mapování: " + e.message);
+            if (node) node.warn(`Mapping load error: ${e.message}`);
             return null;
         }
     }
@@ -148,261 +116,98 @@ module.exports = function(RED) {
     function GalaxySIAInNode(config) {
         RED.nodes.createNode(this, config);
         const node = this;
-
-        // Get the config node
         const cfg = RED.nodes.getNode(config.config);
-        if (!cfg) {
-            node.error("Chybí konfigurační uzel");
-            node.status({fill:"red", shape:"ring", text:"chybí konfigurace"});
+        if (!cfg || !cfg.panelPort || !cfg.account) {
+            node.error("Invalid configuration: panelPort/account missing");
+            node.status({ fill: 'red', shape: 'ring', text: 'bad config' });
             return;
         }
 
-        // Ověření požadovaných konfiguračních hodnot
-        if (!cfg.panelPort || !cfg.account) {
-            node.error("Chybí povinné konfigurační hodnoty (port nebo account)");
-            node.status({fill:"red", shape:"ring", text:"neplatná konfigurace"});
-            return;
-        }
-
-        let server;
+        let server = null;
         let sockets = [];
         let heartbeatTimer = null;
+        let inquirySeq = POLLING_SEQ_START;
+        const mapping = loadDynamicMapping(cfg.mapFile, node);
 
-        function setStatus(text, color = "green", shape = "dot") {
+        function setStatus(text, color='green', shape='dot') {
             node.status({ fill: color, shape: shape, text: text });
         }
 
         function startHeartbeat() {
-            stopHeartbeat();
+            clearInterval(heartbeatTimer);
             const interval = Number(cfg.heartbeatInterval) || HEARTBEAT_INTERVAL_DEFAULT;
-            if (interval > 0) {
+            if (interval>0) {
                 heartbeatTimer = setInterval(() => {
-                    sockets.forEach(socket => {
-                        if (socket.writable) {
-                            socket.write(HEARTBEAT_PAYLOAD);
-                        }
-                    });
-                    setStatus("heartbeat sent", "blue", "ring");
-                }, interval * 1000);
+                    sockets.forEach(s => { if (s.writable) s.write(HEARTBEAT_PAYLOAD); });
+                    setStatus('heartbeat');
+                }, interval*1000);
             }
         }
+        function stopHeartbeat() { clearInterval(heartbeatTimer); }
+        function cleanupSockets() { sockets = sockets.filter(s=>!s.destroyed); }
 
-        function stopHeartbeat() {
-            if (heartbeatTimer) {
-                clearInterval(heartbeatTimer);
-                heartbeatTimer = null;
-            }
+        function startPolling(socket) {
+            clearInterval(socket.poller);
+            const interval = Number(cfg.pollingInterval) || POLLING_INTERVAL_DEFAULT;
+            socket.poller = setInterval(() => {
+                if (socket.writable) {
+                    const inq = buildInquiryPacket(cfg.account, inquirySeq);
+                    socket.write(inq);
+                    debugLog(node, 'Sent inquiry', { seq: inquirySeq });
+                    inquirySeq = inquirySeq<POLLING_SEQ_MAX? inquirySeq+1 : POLLING_SEQ_START;
+                }
+            }, interval*1000);
+            setStatus(`polling every ${interval}s`, 'blue','ring');
         }
-
-        function cleanupSockets() {
-            sockets = sockets.filter(s => !s.destroyed);
-        }
+        function stopPolling(socket) { clearInterval(socket.poller); }
 
         function handleSocket(socket) {
-            if (sockets.length >= MAX_CONNECTIONS) {
-                socket.destroy();
-                node.warn("Překročen maximální počet spojení");
-                return;
-            }
-            
-            let pollingTimer = null;
-            let inquirySeq = POLLING_SEQ_START;
-
-            function startPolling() {
-                stopPolling();
-                
-                const interval = Number(cfg.pollingInterval) || POLLING_INTERVAL_DEFAULT;
-                
-                pollingTimer = setInterval(() => {
-                    if (socket && socket.writable) {
-                        try {
-                            const inquiryStr = buildInquiryPacket(cfg.account, inquirySeq);
-                            socket.write(inquiryStr);
-                            
-                            if (node && cfg.debug) {
-                                node.debug(`Sent inquiry: ${inquiryStr.trim()}, seq=${inquirySeq}`);
-                            }
-                            
-                            // Inkrementujeme sekvenci a kontrolujeme přetečení
-                            inquirySeq++;
-                            if (inquirySeq > POLLING_SEQ_MAX) {
-                                inquirySeq = POLLING_SEQ_START;
-                            }
-                        } catch (err) {
-                            node.error(`Error sending inquiry: ${err.message}`);
-                        }
-                    }
-                }, interval * 1000);
-                
-                setStatus("polling active", "green", "dot");
-            }
-
-            function stopPolling() {
-                if (pollingTimer) {
-                    clearInterval(pollingTimer);
-                    pollingTimer = null;
-                }
-            }
-
-            sockets.push(socket);
-            setStatus("client connected");
-
-            socket.on("data", function(data) {
-                const rawStr = data.toString();
-                node.debug(`Received raw data: ${rawStr}`);
-                
-                try {
-                    // Handshake detekce
-                    const h = rawStr.match(/^([FD]#?[0-9A-Za-z]+)[^\r\n]*/);
-                    if (h) {
-                        const ackStr = getAckString(cfg, h[1], node);
-                        if (socket && socket.writable) {
-                            sendAck(socket, ackStr, node);
-                        }
-                        setStatus("handshake");
-
-                        // Po úspěšném handshake spustíme polling
-                        startPolling();
-
-                        node.send([{
-                            payload: {
-                                type: "handshake",
-                                ack: ackStr,
-                                raw: rawStr,
-                                account: h[1].split("#")[1],
-                                timestamp: new Date().toISOString()
-                            }
-                        }, null]);
+            if (sockets.length>=MAX_CONNECTIONS) { socket.destroy(); return; }
+            sockets.push(socket); setStatus('connected');
+            socket.on('data', data => {
+                const raw = data.toString('ascii'); debugLog(node,'recv raw',raw);
+                raw.split(/\r?\n/).filter(l=>l).forEach(line=>{
+                    // Handshake
+                    if (/^[FD]#?\d+/.test(line)) {
+                        const ackStr = getAckString(cfg,line,node);
+                        sendAck(socket, ackStr,node);
+                        setStatus('handshake');
+                        node.send({ payload:{ type:'handshake', raw:line, ack:ackStr, account:cfg.account, ts:new Date().toISOString() } });
+                        startPolling(socket);
                         return;
                     }
-
-                    // Pokud to není handshake, zkusíme parsovat jako SIA zprávu
-                    const parsed = parseSIA(
-                        rawStr,
-                        cfg.siaLevel,
-                        cfg.encryption,
-                        cfg.encryptionKey,
-                        cfg.encryptionHex
-                    );
-
-                    node.debug(`Parsed SIA message: ${JSON.stringify(parsed)}`);
-
+                    // SIA event/status/null
+                    let parsed;
+                    try { parsed = parseSIA(line); } catch(e){ node.warn(`parse error ${e.message}`); return; }
                     if (parsed.valid) {
-                        const ackStr = getAckString(cfg, rawStr, node);
-                        if (socket && socket.writable) {
-                            sendAck(socket, ackStr, node);
-                        }
-
-                        node.debug({
-                            event: "message",
-                            parsed: parsed,
-                            ack: ackStr
-                        });
-
-                        // Odešleme zprávu s daty
-                        node.send([{
-                            payload: {
-                                ...parsed,
-                                type: "sia_message",
-                                ack: ackStr,
-                                raw: rawStr,
-                                timestamp: new Date().toISOString()
-                            }
-                        }, null]);
+                        const ackStr = getAckString(cfg,line,node);
+                        sendAck(socket,ackStr,node);
+                        let payload = { ...parsed, raw: line, ack: ackStr, ts: new Date().toISOString() };
+                        if (mapping && mapping[parsed.eventType]) payload.eventDesc = mapping[parsed.eventType];
+                        node.send({ payload });
                     } else {
-                        node.warn(`Invalid message received: ${rawStr}`);
+                        node.warn(`Invalid SIA packet: ${line}`);
                     }
-                } catch (err) {
-                    node.error(`Error processing message: ${err.message}`);
-                    node.debug({
-                        event: "error",
-                        raw: rawStr,
-                        error: err.message
-                    });
-                }
+                });
             });
-
-            socket.on("close", () => {
-                stopPolling();
-                setStatus("client disconnected", "yellow", "ring");
-                cleanupSockets();
-            });
-
-            socket.on("error", err => {
-                stopPolling();
-                node.error("Socket error: " + err.message);
-                setStatus("socket error", "red", "ring");
-            });
+            socket.on('close',()=>{ stopPolling(socket); setStatus('disconnected','yellow','ring'); cleanupSockets(); });
+            socket.on('error',e=>{ stopPolling(socket); node.error(`sock err ${e.message}`); setStatus('sock error','red'); });
         }
 
         function startServer() {
-            if (server) return;
-
-            try {
-                server = net.createServer(handleSocket);
-
-                server.on("error", err => {
-                    node.error("Server error: " + err.message);
-                    setStatus("server error", "red", "dot");
-                });
-
-                server.listen(cfg.panelPort, () => {
-                    setStatus("listening");
-                    node.log(`Server listening on port ${cfg.panelPort}`);
-                });
-
-                startHeartbeat();
-            } catch (err) {
-                node.error("Failed to start server: " + err.message);
-                setStatus("start failed", "red", "dot");
-            }
+            server = net.createServer(handleSocket);
+            server.maxConnections = MAX_CONNECTIONS;
+            server.listen(cfg.panelPort,()=>{ node.log(`Listening ${cfg.panelPort}`); setStatus('listening'); startHeartbeat(); });
+            server.on('error',e=>{ node.error(`srv err ${e.message}`); setStatus('srv error','red'); });
         }
-
         function stopServer(done) {
             stopHeartbeat();
-
-            if (server) {
-                try {
-                    server.close(() => {
-                        server = null;
-                        if (done) done();
-                    });
-                } catch (err) {
-                    node.error("Error stopping server: " + err.message);
-                    if (done) done();
-                }
-            } else {
-                if (done) done();
-            }
-
-            // Cleanup all sockets
-            sockets.forEach(s => {
-                try {
-                    if (!s.destroyed) {
-                        s.destroy();
-                    }
-                } catch (err) {
-                    node.error("Error cleaning up socket: " + err.message);
-                }
-            });
-            sockets = [];
-            setStatus("stopped", "grey", "ring");
+            server&&server.close(()=>{ sockets.forEach(s=>s.destroy()); sockets=[]; setStatus('stopped'); done&&done(); });
         }
 
-        // Spuštění serveru při inicializaci
         startServer();
-
-        // Cleanup při zavření nodu
-        this.on("close", function(removed, done) {
-            stopServer(() => {
-                if (removed) {
-                    // Zde můžeme přidat další cleanup pokud je potřeba
-                }
-                done();
-            });
-        });
+        this.on('close',(removed,done)=>{ stopServer(done); });
     }
 
-    // Registrace typu nodu
-    RED.nodes.registerType("galaxy-sia-in", GalaxySIAInNode);
+    RED.nodes.registerType("galaxy-sia-in",GalaxySIAInNode);
 };
