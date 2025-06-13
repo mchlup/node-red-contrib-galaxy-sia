@@ -24,7 +24,7 @@ module.exports = function(RED) {
     const HEARTBEAT_PAYLOAD = "\r\n0000#\r\n";  // Null zpráva od panelu není odesílána, ale tento payload lze použít
 
     function debugLog(node, message, data) {
-        if (DEBUG) {
+        if (DEBUG && node && node.debug) {
             node.debug(message + (data ? `: ${JSON.stringify(data)}` : ''));
         }
     }
@@ -57,8 +57,9 @@ module.exports = function(RED) {
                 const account = rawStr.split('#')[1].replace(/\D/g, '');
                 return buildAckPacket(account, "00");
             } catch (err) {
-                if (node) node.error(`Handshake ACK error: ${err.message}`);
-                return "ACK\r\n";
+                if (node && node.error) node.error(`Handshake ACK error: ${err.message}`);
+                // Vrať fallback, ale ideálně pořád SIA packet
+                return buildAckPacket(cfg.account, "00");
             }
         }
         switch (cfg.ackType) {
@@ -69,20 +70,21 @@ module.exports = function(RED) {
                         return buildAckPacket(parsed.account, parsed.seq || "00");
                     }
                 } catch (e) {
-                    if (node) node.warn(`SIA_PACKET ACK error: ${e.message}`);
+                    if (node && node.warn) node.warn(`SIA_PACKET ACK error: ${e.message}`);
                 }
+                // Fallback na SIA ACK packet s konfiguračním účtem
                 return buildAckPacket(cfg.account, "00");
             case "A_CRLF":            return "A\r\n";
             case "A":                 return "A";
-            case "ACK_CRLF":         return "ACK\r\n";
-            case "ACK":              return "ACK";
-            case "ECHO":             return rawStr;
-            case "ECHO_TRIM_END":    return rawStr.slice(0, -1);
+            case "ACK_CRLF":          return "ACK\r\n";
+            case "ACK":               return "ACK";
+            case "ECHO":              return rawStr;
+            case "ECHO_TRIM_END":     return rawStr.slice(0, -1);
             case "ECHO_STRIP_NONPRINT": return rawStr.replace(/[\x00-\x1F\x7F]+$/g, "");
-            case "ECHO_TRIM_BOTH":   return rawStr.trim();
-            case "CUSTOM":           return cfg.ackCustom || "";
+            case "ECHO_TRIM_BOTH":    return rawStr.trim();
+            case "CUSTOM":            return cfg.ackCustom || "";
             default:
-                if (node) node.warn(`Unknown ackType ${cfg.ackType}, defaulting to ACK\r\n`);
+                if (node && node.warn) node.warn(`Unknown ackType ${cfg.ackType}, defaulting to ACK\r\n`);
                 return "ACK\r\n";
         }
     }
@@ -90,14 +92,14 @@ module.exports = function(RED) {
     // Odeslání ACK na socket
     function sendAck(socket, ackStr, node) {
         if (!socket || !socket.writable) {
-            if (node) node.warn("Socket not writable for ACK");
+            if (node && node.warn) node.warn("Socket not writable for ACK");
             return;
         }
         try {
             socket.write(Buffer.from(ackStr, 'ascii'));
             debugLog(node, `Sent ACK (${ackStr.length}B)`);
         } catch (e) {
-            if (node) node.error(`sendAck error: ${e.message}`);
+            if (node && node.error) node.error(`sendAck error: ${e.message}`);
         }
     }
 
@@ -108,7 +110,7 @@ module.exports = function(RED) {
             const data = fs.readFileSync(path, 'utf-8');
             return JSON.parse(data);
         } catch (e) {
-            if (node) node.warn(`Mapping load error: ${e.message}`);
+            if (node && node.warn) node.warn(`Mapping load error: ${e.message}`);
             return null;
         }
     }
@@ -178,7 +180,7 @@ module.exports = function(RED) {
                     }
                     // SIA event/status/null
                     let parsed;
-                    try { parsed = parseSIA(line); } catch(e){ node.warn(`parse error ${e.message}`); return; }
+                    try { parsed = parseSIA(line); } catch(e){ if (node && node.warn) node.warn(`parse error ${e.message}`); return; }
                     if (parsed.valid) {
                         const ackStr = getAckString(cfg,line,node);
                         sendAck(socket,ackStr,node);
@@ -186,19 +188,19 @@ module.exports = function(RED) {
                         if (mapping && mapping[parsed.eventType]) payload.eventDesc = mapping[parsed.eventType];
                         node.send({ payload });
                     } else {
-                        node.warn(`Invalid SIA packet: ${line}`);
+                        if (node && node.warn) node.warn(`Invalid SIA packet: ${line}`);
                     }
                 });
             });
             socket.on('close',()=>{ stopPolling(socket); setStatus('disconnected','yellow','ring'); cleanupSockets(); });
-            socket.on('error',e=>{ stopPolling(socket); node.error(`sock err ${e.message}`); setStatus('sock error','red'); });
+            socket.on('error',e=>{ stopPolling(socket); if (node && node.error) node.error(`sock err ${e.message}`); setStatus('sock error','red'); });
         }
 
         function startServer() {
             server = net.createServer(handleSocket);
             server.maxConnections = MAX_CONNECTIONS;
             server.listen(cfg.panelPort,()=>{ node.log(`Listening ${cfg.panelPort}`); setStatus('listening'); startHeartbeat(); });
-            server.on('error',e=>{ node.error(`srv err ${e.message}`); setStatus('srv error','red'); });
+            server.on('error',e=>{ if (node && node.error) node.error(`srv err ${e.message}`); setStatus('srv error','red'); });
         }
         function stopServer(done) {
             stopHeartbeat();
