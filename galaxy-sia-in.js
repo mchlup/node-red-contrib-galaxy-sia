@@ -6,81 +6,73 @@ module.exports = function(RED) {
   const siaCRC = parseSIA.siaCRC;
   const pad = parseSIA.pad;
 
-  const HEARTBEAT_PAYLOAD = "HEARTBEAT";
+  // Konstanty pro ACK formát
+  const ACK_BODY_LENGTH = 14;           // tělo ACK musí mít vždy 14 znaků
+  const ACCOUNT_PAD_LENGTH = 4;         // délka čísla účtu v ACK (před #)
+
+  // SIA DC-09 keepalive (heartbeat) zpráva: prázdné vyžádání (0-length)
+  const HEARTBEAT_PAYLOAD = "\r\n0000#\r\n";
   const HEARTBEAT_INTERVAL_DEFAULT = 60; // seconds
   const MAX_CONNECTIONS = 20; // Prevent DoS
 
-  // Funkce pro debug log
   function debugLog(node, message, data) {
     if (DEBUG) {
       node.debug(message + (data ? `: ${JSON.stringify(data)}` : ''));
     }
   }
 
-  // Sestavení SIA DC-09 ACK packetu (vždy 14 znaků v těle)
+  // Sestaví SIA DC-09 ACK paket (tělo = 14 znaků)
   function buildAckPacket(account, seq = "00", rcv = "R0", lpref = "L0") {
-    const ackBody = `ACK${seq}${rcv}${lpref}#${account}`; // 14 znaků
-    const lenStr = pad(ackBody.length, 4); // vždy 0014
-    const crc = siaCRC(ackBody);
-    const finalPacket = `\r\n${lenStr}${ackBody}${crc}\r\n`;
-    if (DEBUG) {
-      console.log('ACK packet components:', {
-        ackBody,
-        ackBody_length: ackBody.length,
-        lenStr,
-        crc,
-        finalHex: Buffer.from(finalPacket, 'ascii').toString('hex')
-      });
+    // Zarovnáme číslo účtu na pevnou délku
+    const accountPadded = pad((account || "").toString(), ACCOUNT_PAD_LENGTH);
+    const ackBody = `ACK${seq}${rcv}${lpref}#${accountPadded}`;
+    // Délka těla by měla být konstantní
+    if (ackBody.length !== ACK_BODY_LENGTH) {
+      console.warn(`ACK BODY length is NOT ${ACK_BODY_LENGTH}: ${ackBody.length} [${ackBody}]`);
     }
-    return finalPacket;
+    const lenStr = pad(ACK_BODY_LENGTH, 4); // vždy "0014"
+    const crc = siaCRC(ackBody);
+    return `\r\n${lenStr}${ackBody}${crc}\r\n`;
   }
 
-  // Vytvoření ACK stringu podle přijaté zprávy (handshake, běžné ACK, ...)
+// Vytvoří ACK string podle typu zprávy
   function getAckString(cfg, rawStr, node) {
-  node.debug(`Processing message for ACK: ${rawStr}`);
-  // Pro handshake používáme specifický formát podle DC-09!
-  if (rawStr.startsWith("F#") || rawStr.startsWith("D#")) {
-    const seq = "00";
-    const account = (rawStr.split("#")[1] || "").match(/\d+/)?.[0] || "";
-    const ackBody = `ACK${seq}R0L0#${account}`;
-    node.debug(`ACK BODY: "${ackBody}", length: ${ackBody.length}`);
-    if (ackBody.length !== 14) {
-      node.warn(`ACK BODY length is NOT 14: ${ackBody.length} [${ackBody}]`);
+    node.debug(`Processing message for ACK: ${rawStr}`);
+
+    // Handshake (F# / D#)
+    const handshakeMatch = rawStr.match(/^([FD]#?\d+)[^\r\n]*/);
+    if (handshakeMatch) {
+      const rawAccount = (handshakeMatch[1].split("#")[1] || "");
+      const seq = "00";
+      const accountPadded = pad(rawAccount, ACCOUNT_PAD_LENGTH);
+      const ackBody = `ACK${seq}R0L0#${accountPadded}`;
+      node.debug(`Handshake ACK BODY (${ackBody.length}b): ${ackBody}`);
+      return buildAckPacket(rawAccount, seq, "R0", "L0");
     }
-    const len = pad(ackBody.length, 4);
-    const crc = siaCRC(ackBody);
-    const ackStr = `\r\n${len}${ackBody}${crc}\r\n`;
-    node.debug(`Sending handshake ACK: ${ackStr}`);
-    return ackStr;
-  }
 
-    // Ostatní typy ACK
-  switch (cfg.ackType) {
-    case "SIA_PACKET":
-      try {
-        const parsed = parseSIA(rawStr);
-        if (parsed.valid) {
-          const ackBody = `ACK${parsed.seq || "00"}R0L0#${parsed.account}`;
-          node.debug(`ACK BODY: "${ackBody}", length: ${ackBody.length}`);
-          if (ackBody.length !== 14) {
-            node.warn(`ACK BODY length is NOT 14: ${ackBody.length} [${ackBody}]`);
+    switch (cfg.ackType) {
+      case "SIA_PACKET":
+        try {
+          const parsed = parseSIA(rawStr);
+          if (parsed.valid) {
+            const seq = parsed.seq || "00";
+            const accountPadded = pad(parsed.account.toString(), ACCOUNT_PAD_LENGTH);
+            const ackBody = `ACK${seq}R0L0#${accountPadded}`;
+            node.debug(`Message ACK BODY (${ackBody.length}b): ${ackBody}`);
+            return buildAckPacket(parsed.account, seq, "R0", "L0");
           }
-          const len = pad(ackBody.length, 4);
-          let crc = siaCRC(ackBody);
-          return `\r\n${len}${ackBody}${crc}\r\n`;
+        } catch (err) {
+          node.warn(`Error creating SIA ACK packet: ${err.message}`);
         }
-      } catch (e) {
-        node.warn("Error creating SIA ACK packet: " + e.message);
-      }
-      return "ACK\r\n";
+        return "ACK\r\n";
 
-    case "A_CRLF":              return "A\r\n";
-    case "A":                   return "A";
-    case "ACK_CRLF":            return "ACK\r\n";
-    case "ACK":                 return "ACK";
-    case "ECHO":                return rawStr;
-    default:                    return "ACK\r\n";
-  }
+      case "A_CRLF":   return "A\r\n";
+      case "A":        return "A";
+      case "ACK_CRLF": return "ACK\r\n";
+      case "ACK":      return "ACK";
+      case "ECHO":     return rawStr;
+      default:          return "ACK\r\n";
+    }
   }
 
   // Odeslání ACK na socket
@@ -91,9 +83,7 @@ module.exports = function(RED) {
     }
     try {
       const ackBuffer = Buffer.from(ackStr, 'ascii');
-      if (node && node.config && node.config.debug) {
-        node.debug(`Sending ACK (${ackBuffer.length} bytes): ${ackBuffer.toString('hex')}`);
-      }
+      node.debug(`Sending ACK (${ackBuffer.length} bytes): ${ackBuffer.toString('hex')}`);
       socket.write(ackBuffer);
     } catch (err) {
       if (node) node.error(`Error sending ACK: ${err.message}`);
@@ -141,19 +131,20 @@ module.exports = function(RED) {
     }
 
     function startHeartbeat() {
-      stopHeartbeat();
-      const interval = Number(cfg.heartbeatInterval) || HEARTBEAT_INTERVAL_DEFAULT;
-      if (interval > 0) {
-        heartbeatTimer = setInterval(() => {
-          sockets.forEach(socket => {
-            if (socket.writable) {
-              socket.write(HEARTBEAT_PAYLOAD);
-            }
-          });
-          setStatus("heartbeat sent", "blue", "ring");
-        }, interval * 1000);
-      }
+    stopHeartbeat();
+    const interval = Number(cfg.heartbeatInterval) || HEARTBEAT_INTERVAL_DEFAULT;
+    if (interval > 0) {
+      heartbeatTimer = setInterval(() => {
+        cleanupSockets();
+        sockets.forEach(socket => {
+          if (socket.writable) {
+            socket.write(HEARTBEAT_PAYLOAD);
+          }
+        });
+        setStatus("heartbeat sent", "blue", "ring");
+      }, interval * 1000);
     }
+  }
 
     function stopHeartbeat() {
       if (heartbeatTimer) {
