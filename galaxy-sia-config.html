@@ -128,10 +128,17 @@ RED.nodes.registerType('galaxy-sia-config',{
         <input type="text" id="node-config-input-ackCustom">
     </div>
     <div class="form-row">
-        <label for="node-config-input-ackCrcFormat">ACK CRC Format</label>
-        <select id="node-config-input-ackCrcFormat">
-            <option value="hex">Hex (ASCII)</option>
-            <option value="bin">Binární (2B)</option>
+    <label for="node-config-input-ackCrcFormat"><i class="fa fa-shield"></i> ACK CRC Format</label>
+    <select id="node-config-input-ackCrcFormat">
+        <option value="hex">Hex (ASCII)</option>
+        <option value="bin">Binární (2B)</option>
+    </select>
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-pollingType"><i class="fa fa-refresh"></i> Polling Type</label>
+        <select id="node-config-input-pollingType">
+            <option value="inquiry">Inquiry</option>
+            <option value="heartbeat">Heartbeat</option>
         </select>
     </div>
     <div class="form-row">
