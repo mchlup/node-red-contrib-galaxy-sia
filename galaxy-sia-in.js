@@ -33,59 +33,59 @@ module.exports = function(RED) {
     function buildAckPacket(account, seq = "00", rcv = "R0", lpref = "L0", crcFormat = "hex") {
         const acct = account.toString().padStart(4, '0').slice(-4);
         const ackBody = `ACK${seq}${rcv}${lpref}#${acct}`;
+        const bodyLength = Buffer.from(ackBody).length;
         const lenStr = pad(ackBody.length, 4);
         const crc = siaCRC(ackBody); // string, např. "9C54"
         let packet;
 
         if (crcFormat === "bin") {
-            // Binární CRC: převod 4hex na 2 bajty
-            const crcHigh = parseInt(crc.substring(0, 2), 16);
-            const crcLow = parseInt(crc.substring(2, 4), 16);
-            packet = Buffer.concat([
-                Buffer.from('\r\n' + lenStr + ackBody, 'ascii'),
-                Buffer.from([crcHigh, crcLow]),
-                Buffer.from('\r\n', 'ascii')
+        // Binární CRC: převedeme hex na 2 byty
+        const crcHigh = parseInt(crc.substring(0, 2), 16);
+        const crcLow = parseInt(crc.substring(2, 4), 16);
+        return Buffer.concat([
+            Buffer.from('\r\n' + lenStr + ackBody, 'ascii'),
+            Buffer.from([crcHigh, crcLow]),
+            Buffer.from('\r\n', 'ascii')
             ]);
         } else {
             // Výchozí HEX CRC
-            packet = Buffer.from(`\r\n${lenStr}${ackBody}${crc}\r\n`, 'ascii');
+            //packet = Buffer.from(`\r\n${lenStr}${ackBody}${crc}\r\n`, 'ascii');
+            return Buffer.from(`\r\n${lenStr}${ackBody}${crc}\r\n`, 'ascii');
         }
         return packet;
     }
 
     // Inquiry: I<account>,<seq4>,00\r\n
-    function buildInquiryPacket(account, seq) {
+    function buildInquiryPacket(account, seq, type = "inquiry") {
         const seqStr = seq.toString().padStart(4, '0');
+        if (type === "heartbeat") {
+            // Heartbeat může být např. null zpráva
+            return "\r\n0000#\r\n";
+        }
+        // Základní inquiry packet (SIA DC-09)
         return `I${account},${seqStr},00\r\n`;
     }
 
     // Generování ACK string podle typu cfg.ackType
     function getAckString(cfg, rawStr, node) {
-        // handshake
-        if (/^[FD]#?\d+/.test(rawStr)) {
-            try {
-                const account = rawStr.split('#')[1].replace(/\D/g, '');
-                const crcFormat = cfg.ackCrcFormat || "hex";
-                // return buildAckPacket(account, "00");
-                return buildAckPacket(account, "00", "R0", "L0", crcFormat);
-            } catch (err) {
-                if (node && node.error) node.error(`Handshake ACK error: ${err.message}`);
-                // Vrať fallback, ale ideálně pořád SIA packet
-                return buildAckPacket(cfg.account, "00");
-            }
-        }
+    const crcFormat = cfg.ackCrcFormat || "hex";
+    node.debug(`Processing message for ACK: ${rawStr}`);
+    if (rawStr.startsWith("F#") || rawStr.startsWith("D#")) {
+        const seq = "00";
+        const account = (rawStr.split("#")[1] || "").match(/\d+/)?.[0] || "";
+        return buildAckPacket(account, seq, "R0", "L0", cfg.ackCrcFormat || "hex");
+    }
         switch (cfg.ackType) {
-            case "SIA_PACKET":
-                try {
-                    const parsed = parseSIA(rawStr);
-                    if (parsed.valid) {
-                        return buildAckPacket(parsed.account, parsed.seq || "00");
-                    }
-                } catch (e) {
-                    if (node && node.warn) node.warn(`SIA_PACKET ACK error: ${e.message}`);
+        case "SIA_PACKET":
+            try {
+                const parsed = parseSIA(rawStr);
+                if (parsed.valid) {
+                    return buildAckPacket(account, seq, "R0", "L0", cfg.ackCrcFormat || "hex");
                 }
-                // Fallback na SIA ACK packet s konfiguračním účtem
-                return buildAckPacket(cfg.account, "00");
+            } catch (e) {
+                node.warn("Error creating SIA ACK packet: " + e.message);
+            }
+            return buildAckPacket(account, seq, "R0", "L0", cfg.ackCrcFormat || "hex");
             case "A_CRLF":            return "A\r\n";
             case "A":                 return "A";
             case "ACK_CRLF":          return "ACK\r\n";
@@ -102,23 +102,24 @@ module.exports = function(RED) {
     }
 
     // Odeslání ACK na socket
-    function sendAck(socket, ackStr, node) {
-        if (!socket || !socket.writable) {
-            if (node && node.warn) node.warn("Socket not writable for ACK");
-            return;
-        }
-        try {
-            // ackStr je buď string nebo Buffer:
-                if (Buffer.isBuffer(ackStr)) {
-                    socket.write(ackStr);
-                } else {
-                    socket.write(Buffer.from(ackStr, 'ascii'));
-                }
-            debugLog(node, `Sent ACK (${ackStr.length}B)`);
-        } catch (e) {
-            if (node && node.error) node.error(`sendAck error: ${e.message}`);
-        }
+    function sendAck(socket, ack, node) {
+    if (!socket || !socket.writable) {
+        if (node) node.warn("Socket není připraven pro odeslání ACK");
+        return;
     }
+    try {
+        if (Buffer.isBuffer(ack)) {
+            socket.write(ack);
+        } else {
+            socket.write(Buffer.from(ack, 'ascii'));
+        }
+        if (node && node.config && node.config.debug) {
+            node.debug(`Sent ACK (${Buffer.isBuffer(ack) ? ack.length : Buffer.byteLength(ack)}) bytes`);
+        }
+    } catch (err) {
+        if (node) node.error(`Error sending ACK: ${err.message}`);
+    }
+}
 
     // Načtení externího mapování eventů
     function loadDynamicMapping(path, node) {
@@ -167,16 +168,16 @@ module.exports = function(RED) {
 
         function startPolling(socket) {
             clearInterval(socket.poller);
-            const interval = Number(cfg.pollingInterval) || POLLING_INTERVAL_DEFAULT;
+            const interval = Number(cfg.periodicReportInterval) || 10;
+            let inquirySeq = 1;
             socket.poller = setInterval(() => {
                 if (socket.writable) {
-                    const inq = buildInquiryPacket(cfg.account, inquirySeq);
-                    socket.write(inq);
-                    debugLog(node, 'Sent inquiry', { seq: inquirySeq });
-                    inquirySeq = inquirySeq<POLLING_SEQ_MAX? inquirySeq+1 : POLLING_SEQ_START;
+                    const pkt = buildInquiryPacket(cfg.account, inquirySeq, cfg.pollingType);
+                    socket.write(pkt);
+                    inquirySeq = inquirySeq < 9999 ? inquirySeq + 1 : 1;
+                    setStatus(`polling: ${cfg.pollingType} (${interval}s)`, "blue", "ring");
                 }
-            }, interval*1000);
-            setStatus(`polling every ${interval}s`, 'blue','ring');
+            }, interval * 1000);
         }
         function stopPolling(socket) { clearInterval(socket.poller); }
 
