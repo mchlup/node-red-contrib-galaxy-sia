@@ -19,16 +19,14 @@ module.exports = function(RED) {
 
   // Sestavení SIA DC-09 ACK packetu (vždy 14 znaků v těle)
   function buildAckPacket(account, seq = "00", rcv = "R0", lpref = "L0") {
-    // Správné tělo ACK: "ACK" + seq + rcv + lpref + "#" + account (délka 14)
-    const ackBody = `ACK${seq}${rcv}${lpref}#${account}`;
-    const bodyLength = Buffer.from(ackBody, 'ascii').length;
-    const lenStr = pad(bodyLength, 4);
+    const ackBody = `ACK${seq}${rcv}${lpref}#${account}`; // 14 znaků
+    const lenStr = pad(ackBody.length, 4); // vždy 0014
     const crc = siaCRC(ackBody);
     const finalPacket = `\r\n${lenStr}${ackBody}${crc}\r\n`;
     if (DEBUG) {
       console.log('ACK packet components:', {
         ackBody,
-        bodyLength,
+        ackBody_length: ackBody.length,
         lenStr,
         crc,
         finalHex: Buffer.from(finalPacket, 'ascii').toString('hex')
@@ -39,52 +37,50 @@ module.exports = function(RED) {
 
   // Vytvoření ACK stringu podle přijaté zprávy (handshake, běžné ACK, ...)
   function getAckString(cfg, rawStr, node) {
-    node.debug(`Processing message for ACK: ${rawStr}`);
-    // Handshake: vždy ACK00R0L0#account
-    if (rawStr.startsWith("F#") || rawStr.startsWith("D#")) {
-      const seq = "00";
-      const account = (rawStr.split("#")[1] || "").match(/\d+/)?.[0] || "";
-      const ackBody = `ACK${seq}R0L0#${account}`;
-      const bodyLength = Buffer.from(ackBody, 'ascii').length;
-      node.debug(`ACK BODY: "${ackBody}", length: ${ackBody.length}, bytes: ${bodyLength}`);
-      if (bodyLength !== 14) {
-        node.warn(`ACK BODY length is NOT 14: ${bodyLength} [${ackBody}]`);
-      }
-      const len = pad(bodyLength, 4);
-      const crc = siaCRC(ackBody);
-      const ackStr = `\r\n${len}${ackBody}${crc}\r\n`;
-      node.debug(`Sending handshake ACK: ${ackStr}`);
-      return ackStr;
+  node.debug(`Processing message for ACK: ${rawStr}`);
+  // Pro handshake používáme specifický formát podle DC-09!
+  if (rawStr.startsWith("F#") || rawStr.startsWith("D#")) {
+    const seq = "00";
+    const account = (rawStr.split("#")[1] || "").match(/\d+/)?.[0] || "";
+    const ackBody = `ACK${seq}R0L0#${account}`;
+    node.debug(`ACK BODY: "${ackBody}", length: ${ackBody.length}`);
+    if (ackBody.length !== 14) {
+      node.warn(`ACK BODY length is NOT 14: ${ackBody.length} [${ackBody}]`);
     }
+    const len = pad(ackBody.length, 4);
+    const crc = siaCRC(ackBody);
+    const ackStr = `\r\n${len}${ackBody}${crc}\r\n`;
+    node.debug(`Sending handshake ACK: ${ackStr}`);
+    return ackStr;
+  }
 
     // Ostatní typy ACK
-    switch (cfg.ackType) {
-      case "SIA_PACKET":
-        try {
-          const parsed = parseSIA(rawStr);
-          if (parsed.valid) {
-            const ackBody = `ACK${parsed.seq || "00"}R0L0#${parsed.account}`;
-            const bodyLength = Buffer.from(ackBody, 'ascii').length;
-            node.debug(`ACK BODY: "${ackBody}", length: ${ackBody.length}, bytes: ${bodyLength}`);
-            if (bodyLength !== 14) {
-              node.warn(`ACK BODY length is NOT 14: ${bodyLength} [${ackBody}]`);
-            }
-            const len = pad(bodyLength, 4);
-            let crc = siaCRC(ackBody);
-            return `\r\n${len}${ackBody}${crc}\r\n`;
+  switch (cfg.ackType) {
+    case "SIA_PACKET":
+      try {
+        const parsed = parseSIA(rawStr);
+        if (parsed.valid) {
+          const ackBody = `ACK${parsed.seq || "00"}R0L0#${parsed.account}`;
+          node.debug(`ACK BODY: "${ackBody}", length: ${ackBody.length}`);
+          if (ackBody.length !== 14) {
+            node.warn(`ACK BODY length is NOT 14: ${ackBody.length} [${ackBody}]`);
           }
-        } catch (e) {
-          node.warn("Error creating SIA ACK packet: " + e.message);
+          const len = pad(ackBody.length, 4);
+          let crc = siaCRC(ackBody);
+          return `\r\n${len}${ackBody}${crc}\r\n`;
         }
-        return "ACK\r\n";
+      } catch (e) {
+        node.warn("Error creating SIA ACK packet: " + e.message);
+      }
+      return "ACK\r\n";
 
-      case "A_CRLF":              return "A\r\n";
-      case "A":                   return "A";
-      case "ACK_CRLF":            return "ACK\r\n";
-      case "ACK":                 return "ACK";
-      case "ECHO":                return rawStr;
-      default:                    return "ACK\r\n";
-    }
+    case "A_CRLF":              return "A\r\n";
+    case "A":                   return "A";
+    case "ACK_CRLF":            return "ACK\r\n";
+    case "ACK":                 return "ACK";
+    case "ECHO":                return rawStr;
+    default:                    return "ACK\r\n";
+  }
   }
 
   // Odeslání ACK na socket
