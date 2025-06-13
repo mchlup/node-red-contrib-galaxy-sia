@@ -3,20 +3,30 @@ module.exports = function(RED) {
   const net = require("net");
   const fs = require("fs");
   const parseSIA = require("./lib/sia-parser");
-  const siaCRC = parseSIA.siaCRC;
-  const pad = parseSIA.pad;
+  // Fallback CRC/pad if not present in parser:
+  function pad(num, len) {
+    let s = String(num);
+    while (s.length < len) s = "0" + s;
+    return s;
+  }
+  function siaCRC(input) {
+    let crc = 0x0000;
+    for (let i = 0; i < input.length; i++) {
+      crc ^= input.charCodeAt(i) << 8;
+      for (let j = 0; j < 8; j++) {
+        crc = (crc & 0x8000)
+          ? ((crc << 1) ^ 0x1021) & 0xffff
+          : (crc << 1) & 0xffff;
+      }
+    }
+    return pad(crc.toString(16).toUpperCase(), 4);
+  }
 
   const HEARTBEAT_PAYLOAD = "\r\n0000#\r\n";
   const HEARTBEAT_INTERVAL_DEFAULT = 60; // seconds
   const MAX_CONNECTIONS = 20; // Prevent DoS
 
   // --- UTILITIES ---
-
-  function debugLog(node, message, data) {
-    if (DEBUG && node && node.debug) {
-      node.debug(message + (data ? `: ${JSON.stringify(data)}` : ''));
-    }
-  }
 
   /**
    * Parse SIA DC-09 message for ACK construction
@@ -53,47 +63,28 @@ module.exports = function(RED) {
   }
 
   /**
-   * Build ACK packet exactly per SIA DC-09 spec
-   * @param {string} seq - 2 chars, from parsed message
-   * @param {string} receiver - 2 chars, from parsed message (default R0)
-   * @param {string} line - 2 chars, from parsed message (default L0)
-   * @param {string} account - last 4 chars
-   * @param {string} crcFormat - "hex" (default, ASCII) or "bin" (2B binary)
-   * @returns {Buffer} ACK packet (always ASCII for Reconeyez)
+   * Build SIA DC-09 ACK packet (ASCII, CRLF, length, CRC)
    */
-  function buildAckPacket(seq, receiver, line, account, crcFormat = "hex") {
-    // Always use the last 4 characters (zero-padded) of the account
+  function buildAckPacket(seq, receiver, line, account) {
+    // SIA standard: always last 4 chars zero-padded
     const acct = account.toString().padStart(4, '0').slice(-4);
     const ackBody = `ACK${seq}${receiver}${line}#${acct}`;
-    // Length must be 14
-    if (ackBody.length !== 14) {
-      throw new Error(`ACK body length must be 14, got "${ackBody}" (${ackBody.length})`);
-    }
+    if (ackBody.length !== 14) throw new Error(`ACK body must be 14 chars, got "${ackBody}"`);
     const lenStr = pad(ackBody.length, 4);
     const crc = siaCRC(ackBody);
-    if (crcFormat === "bin") {
-      // Not recommended for Reconeyez, but available as option
-      const crcHigh = parseInt(crc.substring(0, 2), 16);
-      const crcLow = parseInt(crc.substring(2, 4), 16);
-      return Buffer.concat([
-        Buffer.from('\r\n' + lenStr + ackBody, 'ascii'),
-        Buffer.from([crcHigh, crcLow]),
-        Buffer.from('\r\n', 'ascii')
-      ]);
-    } else {
-      // ASCII (hex) -- strict DC-09/Reconeyez/ebues.de requirement
-      return Buffer.from(`\r\n${lenStr}${ackBody}${crc}\r\n`, 'ascii');
-    }
+    const ack = `\r\n${lenStr}${ackBody}${crc}\r\n`;
+    return Buffer.from(ack, 'ascii');
   }
 
   /**
    * Get correct ACK string/buffer for any incoming SIA message (handshake or event)
    */
-  function getAckString(cfg, rawStr, node) {
-    const crcFormat = cfg.ackCrcFormat || "hex";
+  function getAckBuffer(rawStr, node) {
     const params = parseAckParams(rawStr);
     try {
-      return buildAckPacket(params.seq, params.receiver, params.line, params.account, crcFormat);
+      const ack = buildAckPacket(params.seq, params.receiver, params.line, params.account);
+      node && node.debug && node.debug(`ACK HEX: ${ack.toString('hex')}, RAW: ${ack.toString('ascii')}`);
+      return ack;
     } catch (e) {
       node && node.warn && node.warn(`Failed to build ACK: ${e.message}`);
       // fallback: default (may not be accepted by panel!)
@@ -107,25 +98,19 @@ module.exports = function(RED) {
       return;
     }
     try {
-      if (Buffer.isBuffer(ack)) {
-        socket.write(ack);
-      } else {
-        socket.write(Buffer.from(ack, 'ascii'));
-      }
-      node && node.debug && node.debug(`Sent ACK (${Buffer.isBuffer(ack) ? ack.length : Buffer.byteLength(ack)}) bytes: ${Buffer.isBuffer(ack) ? ack.toString('hex') : Buffer.from(ack, 'ascii').toString('hex')}`);
+      socket.write(ack);
+      node && node.debug && node.debug(`Sent ACK (${ack.length} bytes): ${ack.toString('hex')}`);
     } catch (err) {
       if (node) node.error(`Error sending ACK: ${err.message}`);
     }
   }
 
-  /**
-   * Build Inquiry or Heartbeat packet (volitelné podle configu/panelu)
-   */
   function buildInquiryPacket(account, seq, type = "inquiry") {
-    const seqStr = seq.toString().padStart(4, '0');
+    const seqStr = pad(seq, 4);
     if (type === "heartbeat") {
       return "\r\n0000#\r\n";
     }
+    // 'I<account>,<seq>,00\r\n'
     return `I${account},${seqStr},00\r\n`;
   }
 
@@ -214,7 +199,7 @@ module.exports = function(RED) {
           // Handshake detekce (F# nebo D#)
           const handshakeMatch = rawStr.match(/^([FD]#?[0-9A-Za-z]+)[^\r\n]*/);
           if (handshakeMatch) {
-            const ackBuf = getAckString(cfg, handshakeMatch[1], node);
+            const ackBuf = getAckBuffer(handshakeMatch[1], node);
             if (socket && socket.writable) {
               sendAck(socket, ackBuf, node);
             } else {
@@ -247,7 +232,7 @@ module.exports = function(RED) {
 
           if (parsed.valid) {
             // ACK podle skutečných hodnot ve zprávě!
-            const ackBuf = getAckString(cfg, rawStr, node);
+            const ackBuf = getAckBuffer(rawStr, node);
             if (socket && socket.writable) {
               sendAck(socket, ackBuf, node);
             }
