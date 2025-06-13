@@ -5,7 +5,6 @@ module.exports = function(RED) {
   const parseSIA = require("./lib/sia-parser");
   const siaCRC = parseSIA.siaCRC;  // Add this line to properly import siaCRC
   const pad = parseSIA.pad;
-
   const HEARTBEAT_PAYLOAD = "HEARTBEAT";
   const HEARTBEAT_INTERVAL_DEFAULT = 60; // seconds
   const MAX_CONNECTIONS = 20; // Prevent DoS
@@ -26,11 +25,11 @@ module.exports = function(RED) {
     // Handshake detekce a zpracování
     if (rawStr.startsWith("F#") || rawStr.startsWith("D#")) {
         try {
-            // Extrahujeme account číslo
-            const account = rawStr.split("#")[1].replace(/[^\d]/g, '');
-            
-            // Vytvoříme standardizovaný ACK packet
-            const ackStr = buildAckPacket(account);
+        const account = rawStr.split("#")[1].replace(/[^\d]/g, '');
+        const ackStr = buildAckPacket(account);
+        
+        // Fix: Pass the proper parameters in the correct order
+        sendAck(socket, ackStr, node);
             
             // Debug logging
             if (node && cfg.debug) {
@@ -59,8 +58,9 @@ module.exports = function(RED) {
                 if (parsed.valid) {
                     return buildAckPacket(parsed.account, parsed.seq || "00");
                 }
-            } catch (e) {
-                if (node) node.warn(`Error creating SIA ACK packet: ${e.message}`);
+            } catch (err) {
+                if (node) node.error(`Error creating handshake ACK: ${err.message}`);
+                return "ACK\r\n"; // Fallback response
             }
             return buildAckPacket(cfg.account, "00");
             
@@ -81,21 +81,11 @@ module.exports = function(RED) {
 
 
   function buildAckPacket(account, seq = "00", rcv = "R0", lpref = "L0") {
-    // 1. Vytvoříme základní ACK zprávu bez skrytých znaků
     const ackBody = `ACK${seq}${rcv}${lpref}#${account}`;
-    
-    // 2. Spočítáme skutečnou délku těla zprávy
     const bodyLength = Buffer.from(ackBody).length;
-    
-    // 3. Vytvoříme padding délky na 4 znaky
     const lenStr = pad(bodyLength, 4);
-    
-    // 4. Vypočítáme CRC z těla zprávy
-    const crc = siaCRC(ackBody);
-    
-    // 5. Sestavíme finální zprávu s explicitními CRLF
+    const crc = siaCRC(ackBody);  // This should now work with the proper import
     const finalPacket = `\r\n${lenStr}${ackBody}${crc}\r\n`;
-    
     return finalPacket;
 }
 
@@ -140,10 +130,9 @@ module.exports = function(RED) {
 
   function GalaxySIAInNode(config) {
     RED.nodes.createNode(this, config);
-    const node = this;
-
-    // Get the config node
+    const node = this;  // Ensure this is set
     const cfg = RED.nodes.getNode(config.config);
+    
     if (!cfg) {
       node.error("Chybí konfigurační uzel");
       node.status({fill:"red", shape:"ring", text:"chybí konfigurace"});
@@ -204,14 +193,13 @@ module.exports = function(RED) {
       socket.on("data", function(data) {
         const rawStr = data.toString();
         node.debug(`Received raw data: ${rawStr}`);
-        
         try {
-          // Handshake detekce
-          const h = rawStr.match(/^([FD]#?[0-9A-Za-z]+)[^\r\n]*/);
-          if (h) {
-            const ackStr = getAckString(cfg, h[1], node);
-            sendAck(node, socket, ackStr);
-            setStatus("handshake");
+            const h = rawStr.match(/^([FD]#?[0-9A-Za-z]+)[^\r\n]*/);
+            if (h) {
+                // Pass the node object correctly
+                const ackStr = getAckString(cfg, h[1], node);
+                sendAck(socket, ackStr, node);
+              setStatus("handshake");
 
             // Rozšířené logování pro handshake
             node.debug({
