@@ -1,5 +1,5 @@
 <script type="text/javascript">
-RED.nodes.registerType('galaxy-sia-config',{ 
+RED.nodes.registerType('galaxy-sia-config',{
     category: 'config',
     color: '#a6d7a8',
     defaults: {
@@ -12,25 +12,24 @@ RED.nodes.registerType('galaxy-sia-config',{
         encryptionKey:         { value:"" },
         encryptionHex:         { value:false },
         discardTestMessages:   { value:false },
-        ackType:               { value:"SIA_PACKET" },
+        ackType:               { value:"A_CRLF" },
         ackCustom: { 
             value: "", 
             validate: function(v) { 
                 return (this.ackType === "CUSTOM") ? v.trim().length > 0 : true; 
             }
         },
-        ackCrcFormat: { value: "hex" },
-        pollingType: { value: "inquiry" },
         periodicReportInterval: { value:0, required:true, validate:RED.validators.number() },
-        pollingInterval:       { value:10, required:true, validate:RED.validators.number() },
         userId:                { value:"" },
         userCode:              { value:"" },
         heartbeatInterval:     { value:60, required:true, validate:RED.validators.number() },
         zoneMap:               { value:"" },
         userMap:               { value:"" },
         areaMap:               { value:"" },
-        mapFile:               { value:"" },
-        debug:                 { value:false }
+        externalMappingPath:   { value:"" },
+        debug:                 { value:false },
+        ackCrcFormat:          { value:"hex" },
+        pollingType:           { value:"inquiry" }
     },
     credentials: {
         pin: { type: "password" }
@@ -46,6 +45,7 @@ RED.nodes.registerType('galaxy-sia-config',{
             min:1,
             max:65535
         });
+        
         $("#node-input-ackType").on("change", function() {
             if ($(this).val() === "CUSTOM") {
                 $("#ack-custom-row").show();
@@ -54,19 +54,29 @@ RED.nodes.registerType('galaxy-sia-config',{
             }
         }).trigger("change");
 
-        $("#node-input-siaLevel").spinner({ min:1, max:9 });
-        $("#node-input-periodicReportInterval").spinner({ min:0 });
-        $("#node-input-heartbeatInterval").spinner({ min:0 });
-        $("#node-input-pollingInterval").spinner({ min:1, max:3600 });
+        // Inicializace spinnerů pro číselné hodnoty
+        $("#node-input-siaLevel").spinner({
+            min:1,
+            max:9
+        });
+        $("#node-input-periodicReportInterval").spinner({
+            min:0
+        });
+        $("#node-input-heartbeatInterval").spinner({
+            min:0
+        });
+
+        // Nové volby
         $("#node-config-input-ackCrcFormat").val(this.ackCrcFormat || "hex");
         $("#node-config-input-pollingType").val(this.pollingType || "inquiry");
     },
     oneditsave: function() {
+        // Validace a čištění hodnot před uložením
         this.panelPort = parseInt(this.panelPort);
         this.siaLevel = parseInt(this.siaLevel);
         this.periodicReportInterval = parseInt(this.periodicReportInterval);
         this.heartbeatInterval = parseInt(this.heartbeatInterval);
-        this.pollingInterval = parseInt(this.pollingInterval);
+        // Nové volby
         this.ackCrcFormat = $("#node-config-input-ackCrcFormat").val();
         this.pollingType = $("#node-config-input-pollingType").val();
     }
@@ -117,7 +127,6 @@ RED.nodes.registerType('galaxy-sia-config',{
     <div class="form-row">
         <label for="node-config-input-ackType"><i class="fa fa-reply"></i> ACK Type</label>
         <select id="node-config-input-ackType">
-            <option value="SIA_PACKET">SIA Packet</option>
             <option value="A_CRLF">A\r\n</option>
             <option value="A">A</option>
             <option value="ACK_CRLF">ACK\r\n</option>
@@ -126,6 +135,7 @@ RED.nodes.registerType('galaxy-sia-config',{
             <option value="ECHO_TRIM_END">Echo (trim end)</option>
             <option value="ECHO_STRIP_NONPRINT">Echo (strip non-print)</option>
             <option value="ECHO_TRIM_BOTH">Echo (trim both)</option>
+            <option value="SIA_PACKET">SIA Packet</option>
             <option value="CUSTOM">Custom</option>
         </select>
     </div>
@@ -134,11 +144,11 @@ RED.nodes.registerType('galaxy-sia-config',{
         <input type="text" id="node-config-input-ackCustom">
     </div>
     <div class="form-row">
-    <label for="node-config-input-ackCrcFormat"><i class="fa fa-shield"></i> ACK CRC Format</label>
-    <select id="node-config-input-ackCrcFormat">
-        <option value="hex">Hex (ASCII)</option>
-        <option value="bin">Binární (2B)</option>
-    </select>
+        <label for="node-config-input-ackCrcFormat"><i class="fa fa-shield"></i> ACK CRC Format</label>
+        <select id="node-config-input-ackCrcFormat">
+            <option value="hex">Hex (ASCII)</option>
+            <option value="bin">Binární (2B)</option>
+        </select>
     </div>
     <div class="form-row">
         <label for="node-config-input-pollingType"><i class="fa fa-refresh"></i> Polling Type</label>
@@ -148,19 +158,16 @@ RED.nodes.registerType('galaxy-sia-config',{
         </select>
     </div>
     <div class="form-row">
-        <label for="node-config-input-pollingInterval"><i class="fa fa-refresh"></i> Polling Interval</label>
-        <input type="text" id="node-config-input-pollingInterval">
-        <span class="units">seconds</span>
-    </div>
-    <div class="form-row">
-        <label for="node-config-input-periodicReportInterval"><i class="fa fa-clock-o"></i> Report Interval</label>
+        <label for="node-config-input-periodicReportInterval">
+            <i class="fa fa-clock-o"></i> Report Interval
+        </label>
         <input type="text" id="node-config-input-periodicReportInterval">
-        <span class="units">seconds</span>
     </div>
     <div class="form-row">
-        <label for="node-config-input-heartbeatInterval"><i class="fa fa-heartbeat"></i> Heartbeat</label>
+        <label for="node-config-input-heartbeatInterval">
+            <i class="fa fa-heartbeat"></i> Heartbeat
+        </label>
         <input type="text" id="node-config-input-heartbeatInterval">
-        <span class="units">seconds</span>
     </div>
     <div class="form-row">
         <label for="node-config-input-userId"><i class="fa fa-user"></i> User ID</label>
@@ -172,19 +179,21 @@ RED.nodes.registerType('galaxy-sia-config',{
     </div>
     <div class="form-row">
         <label for="node-config-input-zoneMap"><i class="fa fa-map"></i> Zone Map</label>
-        <input type="text" id="node-config-input-zoneMap" placeholder='{"1":"Zone 1","2":"Zone 2"}'>
+        <input type="text" id="node-config-input-zoneMap">
     </div>
     <div class="form-row">
         <label for="node-config-input-userMap"><i class="fa fa-users"></i> User Map</label>
-        <input type="text" id="node-config-input-userMap" placeholder='{"1":"User 1","2":"User 2"}'>
+        <input type="text" id="node-config-input-userMap">
     </div>
     <div class="form-row">
         <label for="node-config-input-areaMap"><i class="fa fa-object-group"></i> Area Map</label>
-        <input type="text" id="node-config-input-areaMap" placeholder='{"1":"Area 1","2":"Area 2"}'>
+        <input type="text" id="node-config-input-areaMap">
     </div>
     <div class="form-row">
-        <label for="node-config-input-mapFile"><i class="fa fa-file-text-o"></i> Mapping File</label>
-        <input type="text" id="node-config-input-mapFile">
+        <label for="node-config-input-externalMappingPath">
+            <i class="fa fa-file-text-o"></i> External Map
+        </label>
+        <input type="text" id="node-config-input-externalMappingPath">
     </div>
     <div class="form-row">
         <label for="node-config-input-debug"><i class="fa fa-bug"></i> Debug</label>
