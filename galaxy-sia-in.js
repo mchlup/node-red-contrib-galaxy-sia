@@ -60,55 +60,43 @@ module.exports = function(RED) {
       if (ackBody.length !== 14) {
           node.warn(`ACK BODY length is NOT 14: ${ackBody.length} [${ackBody}]`);
       }
+      // Délka těla ACK vždy 4 číslice
       const len = ackBody.length.toString().padStart(4, '0');
+      // SIA CRC vždy 4 znaky HEX (DC-09 standard)
       const crc = parseSIA.siaCRC(ackBody);
       const ackStr = `\r\n${len}${ackBody}${crc}\r\n`;
       node.debug(`Sending handshake ACK: ${ackStr}`);
       return ackStr;
-      } catch (err) {
-            if (node) node.error(`Error creating handshake ACK: ${err.message}`);
-            return "ACK\r\n";
-        }
     }
-    
-    // Zpracování ostatních typů ACK
+    // Ostatní typy ACK zůstávají stejné
     switch (cfg.ackType) {
-        case "SIA_PACKET":
-            try {
-                const parsed = parseSIA(rawStr);
-                if (parsed.valid) {
-                    // Použijeme sekvenční číslo z příchozí zprávy
-                    return buildAckPacket(parsed.account, parsed.seq || "00");
-                }
-            } catch (e) {
-                if (node) node.warn(`Error creating SIA ACK packet: ${e.message}`);
+      case "SIA_PACKET":
+        try {
+          const parsed = parseSIA(rawStr);
+          if (parsed.valid) {
+            const ackBody = `ACK${parsed.seq || "00"}R0L0#${parsed.account}`;
+            node.debug(`ACK BODY: "${ackBody}", length: ${ackBody.length}, bytes: ${[...Buffer.from(ackBody)]}`);
+            if (ackBody.length !== 14) {
+                node.warn(`ACK BODY length is NOT 14: ${ackBody.length} [${ackBody}]`);
             }
-            return buildAckPacket(cfg.account, "00");
-                }
-            } catch (e) {
-                if (node) node.warn(`Error creating SIA ACK packet: ${e.message}`);
-            }
-            return buildAckPacket(cfg.account, "00");
+            const len = pad(ackBody.length, 4);
+            let crc = parseSIA.siaCRC(ackBody);
+            return `\r\n${len}${ackBody}${crc}\r\n`;
           }
         } catch (e) {
-          if (node) node.warn(`Error creating SIA ACK packet: ${e.message}`);
+          node.warn("Error creating SIA ACK packet: " + e.message);
         }
-        return buildAckPacket(cfg.account, "00");
-        
+        // Fallback to simple ACK if parsing fails
+        return "ACK\r\n";
+
       case "A_CRLF":              return "A\r\n";
       case "A":                   return "A";
-      case "ACK_CRLF":           return "ACK\r\n";
-      case "ACK":                return "ACK";
-      case "ECHO":               return rawStr;
-      case "ECHO_TRIM_END":      return rawStr.slice(0, -1);
-      case "ECHO_STRIP_NONPRINT": return rawStr.replace(/[\x00-\x1F\x7F]+$/g, "");
-      case "ECHO_TRIM_BOTH":     return rawStr.trim();
-      case "CUSTOM":             return cfg.ackCustom || "";
-      default:
-        if (node) node.warn(`Unknown ackType: ${cfg.ackType}, using 'ACK\\r\\n'`);
-        return "ACK\r\n";
+      case "ACK_CRLF":            return "ACK\r\n";
+      case "ACK":                 return "ACK";
+      case "ECHO":                return rawStr;
+      default:                    return "ACK\r\n";
     }
-  }
+}
 
   function sendAck(socket, ackStr, node) {
     if (!socket || !socket.writable) {
