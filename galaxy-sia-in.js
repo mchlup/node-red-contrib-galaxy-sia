@@ -50,36 +50,35 @@ module.exports = function(RED) {
 
   function getAckString(cfg, rawStr, node) {
     node.debug(`Processing message for ACK: ${rawStr}`);
-    // Pro handshake používáme specifický formát
+    // Pro handshake používáme specifický formát podle DC-09!
     if (rawStr.startsWith("F#") || rawStr.startsWith("D#")) {
-      // Oprava: extrakce účtu jen jako čísla
+      const seq = "00";
       const account = (rawStr.split("#")[1] || "").match(/\d+/)?.[0] || "";
-      const ackBody = `ACK00R0L0#${account}`;
-      node.debug(`ACK BODY: "${ackBody}", length: ${ackBody.length}, bytes: ${[...Buffer.from(ackBody)]}`);
-      if (ackBody.length !== 14) {
-          node.warn(`ACK BODY length is NOT 14: ${ackBody.length} [${ackBody}]`);
+      const ackBody = `ACK${seq}#${account}`;
+      node.debug(`ACK BODY: "${ackBody}", length: ${ackBody.length}, bytes: ${Buffer.from(ackBody).length}`);
+      if (Buffer.from(ackBody).length !== 14) {
+          node.warn(`ACK BODY length is NOT 14: ${Buffer.from(ackBody).length} [${ackBody}]`);
       }
-      // Délka těla ACK vždy 4 číslice
-      const len = ackBody.length.toString().padStart(4, '0');
-      // SIA CRC vždy 4 znaky HEX (DC-09 standard)
-      const crc = parseSIA.siaCRC(ackBody);
+      const len = pad(Buffer.from(ackBody).length, 4);
+      const crc = siaCRC(ackBody);
       const ackStr = `\r\n${len}${ackBody}${crc}\r\n`;
       node.debug(`Sending handshake ACK: ${ackStr}`);
       return ackStr;
     }
+
     // Ostatní typy ACK zůstávají stejné
     switch (cfg.ackType) {
       case "SIA_PACKET":
         try {
           const parsed = parseSIA(rawStr);
           if (parsed.valid) {
-            const ackBody = `ACK${parsed.seq || "00"}R0L0#${parsed.account}`;
-            node.debug(`ACK BODY: "${ackBody}", length: ${ackBody.length}, bytes: ${[...Buffer.from(ackBody)]}`);
-            if (ackBody.length !== 14) {
-                node.warn(`ACK BODY length is NOT 14: ${ackBody.length} [${ackBody}]`);
+            const ackBody = `ACK${parsed.seq || "00"}#${parsed.account}`;
+            node.debug(`ACK BODY: "${ackBody}", length: ${ackBody.length}, bytes: ${Buffer.from(ackBody).length}`);
+            if (Buffer.from(ackBody).length !== 14) {
+                node.warn(`ACK BODY length is NOT 14: ${Buffer.from(ackBody).length} [${ackBody}]`);
             }
-            const len = pad(ackBody.length, 4);
-            let crc = parseSIA.siaCRC(ackBody);
+            const len = pad(Buffer.from(ackBody).length, 4);
+            let crc = siaCRC(ackBody);
             return `\r\n${len}${ackBody}${crc}\r\n`;
           }
         } catch (e) {
@@ -95,7 +94,7 @@ module.exports = function(RED) {
       case "ECHO":                return rawStr;
       default:                    return "ACK\r\n";
     }
-}
+  }
 
   function sendAck(socket, ackStr, node) {
     if (!socket || !socket.writable) {
