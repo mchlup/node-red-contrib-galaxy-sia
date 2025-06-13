@@ -12,8 +12,13 @@ RED.nodes.registerType('galaxy-sia-config',{
         encryptionKey:         { value:"" },
         encryptionHex:         { value:false },
         discardTestMessages:   { value:false },
-        ackType:               { value:"SIA_PACKET" },
-        ackCustom:             { value:"" },
+        ackType:               { value:"SIA_PACKET" }, // DC-09 vyžaduje SIA_PACKET
+        ackCustom: { 
+            value: "", 
+            validate: function(v) { 
+                return (this.ackType === "CUSTOM") ? v.trim().length > 0 : true; 
+            }
+        },
         periodicReportInterval: { value:0, required:true, validate:RED.validators.number() },
         userId:                { value:"" },
         userCode:              { value:"" },
@@ -23,10 +28,11 @@ RED.nodes.registerType('galaxy-sia-config',{
         areaMap:               { value:"" },
         externalMappingPath:   { value:"" },
         debug:                 { value:false },
-        ackCrcFormat:          { value:"hex" },
-        pollingType:           { value:"inquiry" },
-        ackFullAccount:        { value:false },
-        ackAlwaysCRLF:         { value:true }
+        ackCrcFormat:          { value:"hex" }, // DC-09 vyžaduje ASCII HEX
+        ackAccountFormat:      { value:"last4" }, // nové: výběr formátu účtu v ACK
+        ackCrlf:               { value:true }, // nové: CRLF na začátku a konci
+        disableNagle:          { value:true }, // nové: vypnout Nagle (odesílání v jednom segmentu)
+        pollingType:           { value:"inquiry" }
     },
     credentials: {
         pin: { type: "password" }
@@ -38,20 +44,39 @@ RED.nodes.registerType('galaxy-sia-config',{
         return this.name || this.panelIP || "galaxy-sia-config";
     },
     oneditprepare: function() {
-        $("#node-input-panelPort").spinner({min:1,max:65535});
+        $("#node-input-panelPort").spinner({
+            min:1,
+            max:65535
+        });
+
+        $("#node-input-ackType").on("change", function() {
+            if ($(this).val() === "CUSTOM") {
+                $("#ack-custom-row").show();
+            } else {
+                $("#ack-custom-row").hide();
+            }
+        }).trigger("change");
+
         $("#node-input-siaLevel").spinner({min:1,max:9});
         $("#node-input-periodicReportInterval").spinner({min:0});
         $("#node-input-heartbeatInterval").spinner({min:0});
+
         $("#node-config-input-ackCrcFormat").val(this.ackCrcFormat || "hex");
+        $("#node-config-input-ackAccountFormat").val(this.ackAccountFormat || "last4");
+        $("#node-config-input-ackCrlf").prop("checked", this.ackCrlf !== false);
+        $("#node-config-input-disableNagle").prop("checked", this.disableNagle !== false);
         $("#node-config-input-pollingType").val(this.pollingType || "inquiry");
-        $("#node-config-input-ackFullAccount").prop("checked", this.ackFullAccount === true);
-        $("#node-config-input-ackAlwaysCRLF").prop("checked", this.ackAlwaysCRLF !== false);
     },
     oneditsave: function() {
+        this.panelPort = parseInt(this.panelPort);
+        this.siaLevel = parseInt(this.siaLevel);
+        this.periodicReportInterval = parseInt(this.periodicReportInterval);
+        this.heartbeatInterval = parseInt(this.heartbeatInterval);
         this.ackCrcFormat = $("#node-config-input-ackCrcFormat").val();
+        this.ackAccountFormat = $("#node-config-input-ackAccountFormat").val();
+        this.ackCrlf = $("#node-config-input-ackCrlf").is(":checked");
+        this.disableNagle = $("#node-config-input-disableNagle").is(":checked");
         this.pollingType = $("#node-config-input-pollingType").val();
-        this.ackFullAccount = $("#node-config-input-ackFullAccount").is(":checked");
-        this.ackAlwaysCRLF = $("#node-config-input-ackAlwaysCRLF").is(":checked");
     }
 });
 </script>
@@ -100,12 +125,11 @@ RED.nodes.registerType('galaxy-sia-config',{
     <div class="form-row">
         <label for="node-config-input-ackType"><i class="fa fa-reply"></i> ACK Type</label>
         <select id="node-config-input-ackType">
-            <option value="SIA_PACKET">SIA Packet</option>
+            <option value="SIA_PACKET">SIA Packet (DC-09)</option>
             <option value="A_CRLF">A\r\n</option>
             <option value="A">A</option>
             <option value="ACK_CRLF">ACK\r\n</option>
             <option value="ACK">ACK</option>
-            <option value="ECHO">Echo</option>
             <option value="CUSTOM">Custom</option>
         </select>
     </div>
@@ -117,22 +141,25 @@ RED.nodes.registerType('galaxy-sia-config',{
         <label for="node-config-input-ackCrcFormat"><i class="fa fa-shield"></i> ACK CRC Format</label>
         <select id="node-config-input-ackCrcFormat">
             <option value="hex">Hex (ASCII)</option>
+            <option value="bin">Binární (2B)</option>
         </select>
     </div>
     <div class="form-row">
-        <label for="node-config-input-pollingType"><i class="fa fa-refresh"></i> Polling Type</label>
-        <select id="node-config-input-pollingType">
-            <option value="inquiry">Inquiry</option>
-            <option value="heartbeat">Heartbeat</option>
+        <label for="node-config-input-ackAccountFormat"><i class="fa fa-id-card"></i> ACK Account Format</label>
+        <select id="node-config-input-ackAccountFormat">
+            <option value="last4">Last 4 digits (SIA DC-09)</option>
+            <option value="all">Whole account</option>
         </select>
     </div>
     <div class="form-row">
-        <label for="node-config-input-ackFullAccount"><i class="fa fa-list-ol"></i> Use full account in ACK</label>
-        <input type="checkbox" id="node-config-input-ackFullAccount" style="width: auto;">
+        <label for="node-config-input-ackCrlf"><i class="fa fa-angle-double-right"></i> ACK CRLF wrap</label>
+        <input type="checkbox" id="node-config-input-ackCrlf" checked>
+        <span>Wrap ACK with <code>\r\n</code> (recommended)</span>
     </div>
     <div class="form-row">
-        <label for="node-config-input-ackAlwaysCRLF"><i class="fa fa-exchange"></i> Always CRLF at start/end</label>
-        <input type="checkbox" id="node-config-input-ackAlwaysCRLF" style="width: auto;">
+        <label for="node-config-input-disableNagle"><i class="fa fa-bolt"></i> Disable Nagle</label>
+        <input type="checkbox" id="node-config-input-disableNagle" checked>
+        <span>Send ACK in one segment (recommended)</span>
     </div>
     <div class="form-row">
         <label for="node-config-input-periodicReportInterval">
