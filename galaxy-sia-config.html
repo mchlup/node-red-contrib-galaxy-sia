@@ -12,7 +12,7 @@ RED.nodes.registerType('galaxy-sia-config',{
         encryptionKey:         { value:"" },
         encryptionHex:         { value:false },
         discardTestMessages:   { value:false },
-        ackType:               { value:"A_CRLF" },
+        ackType:               { value:"SIA_PACKET" },  // Změněno na SIA_PACKET jako výchozí
         ackCustom: { 
             value: "", 
             validate: function(v) { 
@@ -20,6 +20,7 @@ RED.nodes.registerType('galaxy-sia-config',{
             }
         },
         periodicReportInterval: { value:0, required:true, validate:RED.validators.number() },
+        pollingInterval:       { value:10, required:true, validate:RED.validators.number() }, // Přidáno pro polling
         userId:                { value:"" },
         userCode:              { value:"" },
         heartbeatInterval:     { value:60, required:true, validate:RED.validators.number() },
@@ -63,6 +64,10 @@ RED.nodes.registerType('galaxy-sia-config',{
         $("#node-input-heartbeatInterval").spinner({
             min:0
         });
+        $("#node-input-pollingInterval").spinner({  // Přidáno pro polling
+            min:1,
+            max:3600
+        });
     },
     oneditsave: function() {
         // Validace a čištění hodnot před uložením
@@ -70,6 +75,7 @@ RED.nodes.registerType('galaxy-sia-config',{
         this.siaLevel = parseInt(this.siaLevel);
         this.periodicReportInterval = parseInt(this.periodicReportInterval);
         this.heartbeatInterval = parseInt(this.heartbeatInterval);
+        this.pollingInterval = parseInt(this.pollingInterval);  // Přidáno pro polling
     }
 });
 </script>
@@ -118,6 +124,7 @@ RED.nodes.registerType('galaxy-sia-config',{
     <div class="form-row">
         <label for="node-config-input-ackType"><i class="fa fa-reply"></i> ACK Type</label>
         <select id="node-config-input-ackType">
+            <option value="SIA_PACKET">SIA Packet</option>
             <option value="A_CRLF">A\r\n</option>
             <option value="A">A</option>
             <option value="ACK_CRLF">ACK\r\n</option>
@@ -126,7 +133,6 @@ RED.nodes.registerType('galaxy-sia-config',{
             <option value="ECHO_TRIM_END">Echo (trim end)</option>
             <option value="ECHO_STRIP_NONPRINT">Echo (strip non-print)</option>
             <option value="ECHO_TRIM_BOTH">Echo (trim both)</option>
-            <option value="SIA_PACKET">SIA Packet</option>
             <option value="CUSTOM">Custom</option>
         </select>
     </div>
@@ -135,16 +141,25 @@ RED.nodes.registerType('galaxy-sia-config',{
         <input type="text" id="node-config-input-ackCustom">
     </div>
     <div class="form-row">
+        <label for="node-config-input-pollingInterval">
+            <i class="fa fa-refresh"></i> Polling Interval
+        </label>
+        <input type="text" id="node-config-input-pollingInterval">
+        <span class="units">seconds</span>
+    </div>
+    <div class="form-row">
         <label for="node-config-input-periodicReportInterval">
             <i class="fa fa-clock-o"></i> Report Interval
         </label>
         <input type="text" id="node-config-input-periodicReportInterval">
+        <span class="units">seconds</span>
     </div>
     <div class="form-row">
         <label for="node-config-input-heartbeatInterval">
             <i class="fa fa-heartbeat"></i> Heartbeat
         </label>
         <input type="text" id="node-config-input-heartbeatInterval">
+        <span class="units">seconds</span>
     </div>
     <div class="form-row">
         <label for="node-config-input-userId"><i class="fa fa-user"></i> User ID</label>
@@ -156,15 +171,15 @@ RED.nodes.registerType('galaxy-sia-config',{
     </div>
     <div class="form-row">
         <label for="node-config-input-zoneMap"><i class="fa fa-map"></i> Zone Map</label>
-        <input type="text" id="node-config-input-zoneMap">
+        <input type="text" id="node-config-input-zoneMap" placeholder='{"1":"Zone 1","2":"Zone 2"}'>
     </div>
     <div class="form-row">
         <label for="node-config-input-userMap"><i class="fa fa-users"></i> User Map</label>
-        <input type="text" id="node-config-input-userMap">
+        <input type="text" id="node-config-input-userMap" placeholder='{"1":"User 1","2":"User 2"}'>
     </div>
     <div class="form-row">
         <label for="node-config-input-areaMap"><i class="fa fa-object-group"></i> Area Map</label>
-        <input type="text" id="node-config-input-areaMap">
+        <input type="text" id="node-config-input-areaMap" placeholder='{"1":"Area 1","2":"Area 2"}'>
     </div>
     <div class="form-row">
         <label for="node-config-input-externalMappingPath">
@@ -211,10 +226,13 @@ RED.nodes.registerType('galaxy-sia-config',{
         <dd>Filter out test messages (DUH)</dd>
         
         <dt>ACK Type <span class="property-type">string</span></dt>
-        <dd>Type of acknowledgment to send</dd>
+        <dd>Type of acknowledgment to send (default: SIA Packet)</dd>
         
         <dt class="optional">Custom ACK <span class="property-type">string</span></dt>
         <dd>Custom acknowledgment string (when ACK Type is Custom)</dd>
+        
+        <dt>Polling Interval <span class="property-type">number</span></dt>
+        <dd>SIA inquiry interval in seconds (default: 10s)</dd>
         
         <dt>Report Interval <span class="property-type">number</span></dt>
         <dd>Periodic report interval in seconds (0 to disable)</dd>
