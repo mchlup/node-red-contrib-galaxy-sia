@@ -18,20 +18,32 @@ module.exports = function(RED) {
   }
 
   function buildAckPacket(account, seq = "00", rcv = "R0", lpref = "L0") {
-    // 1. Vytvoříme základní ACK zprávu bez skrytých znaků
+    // 1. Vytvoříme základní ACK zprávu bez CR/LF
     const ackBody = `ACK${seq}${rcv}${lpref}#${account}`;
     
-    // 2. Spočítáme skutečnou délku těla zprávy
+    // 2. Spočítáme skutečnou délku těla zprávy BEZ CR/LF
     const bodyLength = Buffer.from(ackBody).length;
     
     // 3. Vytvoříme padding délky na 4 znaky
     const lenStr = pad(bodyLength, 4);
     
-    // 4. Vypočítáme CRC z těla zprávy
+    // 4. Vypočítáme CRC z těla zprávy (pouze z ackBody, ne z celé zprávy)
     const crc = siaCRC(ackBody);
     
-    // 5. Sestavíme finální zprávu s explicitními CRLF
+    // 5. Sestavíme finální zprávu s CR/LF
+    // Důležité: CR (\r) = hex 0D, LF (\n) = hex 0A
     const finalPacket = `\r\n${lenStr}${ackBody}${crc}\r\n`;
+    
+    // Debug log pro kontrolu výsledné zprávy
+    if (DEBUG) {
+        console.log('ACK packet components:', {
+            ackBody,
+            bodyLength,
+            lenStr,
+            crc,
+            finalHex: Buffer.from(finalPacket).toString('hex')
+        });
+    }
     
     return finalPacket;
   }
@@ -103,15 +115,15 @@ module.exports = function(RED) {
       if (node) node.warn("Socket není připraven pro odeslání ACK");
       return;
     }
-
     try {
-      const ackBuffer = Buffer.from(ackStr, "binary");
-      
+      // Převedeme string na Buffer, použijeme 'ascii' místo 'binary'
+      // pro lepší zacházení s kontrolními znaky
+      const ackBuffer = Buffer.from(ackStr, 'ascii');
+        //const ackBuffer = Buffer.from(ackStr, "binary");
       // Debug logging před odesláním
       if (node && node.config && node.config.debug) {
         node.debug(`Sending ACK (${ackBuffer.length} bytes): ${ackBuffer.toString('hex')}`);
       }
-      
       socket.write(ackBuffer);
     } catch (err) {
       if (node) node.error(`Error sending ACK: ${err.message}`);
