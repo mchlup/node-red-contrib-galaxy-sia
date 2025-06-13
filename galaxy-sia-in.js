@@ -8,11 +8,12 @@ module.exports = function(RED) {
 
   // Konstanty pro ACK formát
   const ACK_BODY_LENGTH = 14;           // tělo ACK musí mít vždy 14 znaků
-  const ACCOUNT_PAD_LENGTH = 4;         // délka čísla účtu v ACK (před #)
+  const ACCOUNT_PAD_LENGTH = 4;         // délka suffixu čísla účtu v ACK (4 znaky)
 
   // SIA DC-09 keepalive (heartbeat) zpráva: prázdné vyžádání (0-length)
   const HEARTBEAT_PAYLOAD = "\r\n0000#\r\n";
   const HEARTBEAT_INTERVAL_DEFAULT = 60; // seconds
+  let heartbeatTimer = null;
   const MAX_CONNECTIONS = 20; // Prevent DoS
 
   function debugLog(node, message, data) {
@@ -23,19 +24,21 @@ module.exports = function(RED) {
 
   // Sestaví SIA DC-09 ACK paket (tělo = 14 znaků)
   function buildAckPacket(account, seq = "00", rcv = "R0", lpref = "L0") {
-    // Zarovnáme číslo účtu na pevnou délku
-    const accountPadded = pad((account || "").toString(), ACCOUNT_PAD_LENGTH);
-    const ackBody = `ACK${seq}${rcv}${lpref}#${accountPadded}`;
-    // Délka těla by měla být konstantní
+    // Vytvoříme čtyřmístný suffix z čísla účtu (trim nebo pad)
+    const acctStr = (account || "").toString();
+    const acctTrim = acctStr.padStart(ACCOUNT_PAD_LENGTH, '0').slice(-ACCOUNT_PAD_LENGTH);
+    // Sestavíme tělo ACK
+    const ackBody = `ACK${seq}${rcv}${lpref}#${acctTrim}`;
     if (ackBody.length !== ACK_BODY_LENGTH) {
       console.warn(`ACK BODY length is NOT ${ACK_BODY_LENGTH}: ${ackBody.length} [${ackBody}]`);
     }
-    const lenStr = pad(ACK_BODY_LENGTH, 4); // vždy "0014"
+    // Délka těla (4 ascii hex digits)
+    const lenStr = pad(ACK_BODY_LENGTH, 4); // např. "0014"
     const crc = siaCRC(ackBody);
     return `\r\n${lenStr}${ackBody}${crc}\r\n`;
   }
 
-// Vytvoří ACK string podle typu zprávy
+  // Vytvoří ACK string podle typu zprávy
   function getAckString(cfg, rawStr, node) {
     node.debug(`Processing message for ACK: ${rawStr}`);
 
@@ -44,10 +47,9 @@ module.exports = function(RED) {
     if (handshakeMatch) {
       const rawAccount = (handshakeMatch[1].split("#")[1] || "");
       const seq = "00";
-      const accountPadded = pad(rawAccount, ACCOUNT_PAD_LENGTH);
-      const ackBody = `ACK${seq}R0L0#${accountPadded}`;
-      node.debug(`Handshake ACK BODY (${ackBody.length}b): ${ackBody}`);
-      return buildAckPacket(rawAccount, seq, "R0", "L0");
+      const ackPacket = buildAckPacket(rawAccount, seq, "R0", "L0");
+      node.debug(`Handshake ACK Packet: ${ackPacket}`);
+      return ackPacket;
     }
 
     switch (cfg.ackType) {
@@ -56,10 +58,9 @@ module.exports = function(RED) {
           const parsed = parseSIA(rawStr);
           if (parsed.valid) {
             const seq = parsed.seq || "00";
-            const accountPadded = pad(parsed.account.toString(), ACCOUNT_PAD_LENGTH);
-            const ackBody = `ACK${seq}R0L0#${accountPadded}`;
-            node.debug(`Message ACK BODY (${ackBody.length}b): ${ackBody}`);
-            return buildAckPacket(parsed.account, seq, "R0", "L0");
+            const ackPacket = buildAckPacket(parsed.account, seq, "R0", "L0");
+            node.debug(`Message ACK Packet: ${ackPacket}`);
+            return ackPacket;
           }
         } catch (err) {
           node.warn(`Error creating SIA ACK packet: ${err.message}`);
@@ -71,7 +72,7 @@ module.exports = function(RED) {
       case "ACK_CRLF": return "ACK\r\n";
       case "ACK":      return "ACK";
       case "ECHO":     return rawStr;
-      default:          return "ACK\r\n";
+      default:         return "ACK\r\n";
     }
   }
 
@@ -131,20 +132,20 @@ module.exports = function(RED) {
     }
 
     function startHeartbeat() {
-    stopHeartbeat();
-    const interval = Number(cfg.heartbeatInterval) || HEARTBEAT_INTERVAL_DEFAULT;
-    if (interval > 0) {
-      heartbeatTimer = setInterval(() => {
-        cleanupSockets();
-        sockets.forEach(socket => {
-          if (socket.writable) {
-            socket.write(HEARTBEAT_PAYLOAD);
-          }
-        });
-        setStatus("heartbeat sent", "blue", "ring");
-      }, interval * 1000);
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      const interval = Number(cfg.heartbeatInterval) || HEARTBEAT_INTERVAL_DEFAULT;
+      if (interval > 0) {
+        heartbeatTimer = setInterval(() => {
+          cleanupSockets();
+          sockets.forEach(socket => {
+            if (socket.writable) {
+              socket.write(HEARTBEAT_PAYLOAD);
+            }
+          });
+          setStatus("heartbeat sent", "blue", "ring");
+        }, interval * 1000);
+      }
     }
-  }
 
     function stopHeartbeat() {
       if (heartbeatTimer) {
