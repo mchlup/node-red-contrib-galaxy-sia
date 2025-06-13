@@ -1,5 +1,5 @@
 <script type="text/javascript">
-RED.nodes.registerType('galaxy-sia-config',{
+RED.nodes.registerType('galaxy-sia-config',{ 
     category: 'config',
     color: '#a6d7a8',
     defaults: {
@@ -12,7 +12,7 @@ RED.nodes.registerType('galaxy-sia-config',{
         encryptionKey:         { value:"" },
         encryptionHex:         { value:false },
         discardTestMessages:   { value:false },
-        ackType:               { value:"SIA_PACKET" },  // Změněno na SIA_PACKET jako výchozí
+        ackType:               { value:"SIA_PACKET" },
         ackCustom: { 
             value: "", 
             validate: function(v) { 
@@ -20,14 +20,14 @@ RED.nodes.registerType('galaxy-sia-config',{
             }
         },
         periodicReportInterval: { value:0, required:true, validate:RED.validators.number() },
-        pollingInterval:       { value:10, required:true, validate:RED.validators.number() }, // Přidáno pro polling
+        pollingInterval:       { value:10, required:true, validate:RED.validators.number() },
         userId:                { value:"" },
         userCode:              { value:"" },
         heartbeatInterval:     { value:60, required:true, validate:RED.validators.number() },
         zoneMap:               { value:"" },
         userMap:               { value:"" },
         areaMap:               { value:"" },
-        externalMappingPath:   { value:"" },
+        mapFile:               { value:"" },
         debug:                 { value:false }
     },
     credentials: {
@@ -44,7 +44,6 @@ RED.nodes.registerType('galaxy-sia-config',{
             min:1,
             max:65535
         });
-        
         $("#node-input-ackType").on("change", function() {
             if ($(this).val() === "CUSTOM") {
                 $("#ack-custom-row").show();
@@ -53,29 +52,17 @@ RED.nodes.registerType('galaxy-sia-config',{
             }
         }).trigger("change");
 
-        // Inicializace spinnerů pro číselné hodnoty
-        $("#node-input-siaLevel").spinner({
-            min:1,
-            max:9
-        });
-        $("#node-input-periodicReportInterval").spinner({
-            min:0
-        });
-        $("#node-input-heartbeatInterval").spinner({
-            min:0
-        });
-        $("#node-input-pollingInterval").spinner({  // Přidáno pro polling
-            min:1,
-            max:3600
-        });
+        $("#node-input-siaLevel").spinner({ min:1, max:9 });
+        $("#node-input-periodicReportInterval").spinner({ min:0 });
+        $("#node-input-heartbeatInterval").spinner({ min:0 });
+        $("#node-input-pollingInterval").spinner({ min:1, max:3600 });
     },
     oneditsave: function() {
-        // Validace a čištění hodnot před uložením
         this.panelPort = parseInt(this.panelPort);
         this.siaLevel = parseInt(this.siaLevel);
         this.periodicReportInterval = parseInt(this.periodicReportInterval);
         this.heartbeatInterval = parseInt(this.heartbeatInterval);
-        this.pollingInterval = parseInt(this.pollingInterval);  // Přidáno pro polling
+        this.pollingInterval = parseInt(this.pollingInterval);
     }
 });
 </script>
@@ -141,23 +128,17 @@ RED.nodes.registerType('galaxy-sia-config',{
         <input type="text" id="node-config-input-ackCustom">
     </div>
     <div class="form-row">
-        <label for="node-config-input-pollingInterval">
-            <i class="fa fa-refresh"></i> Polling Interval
-        </label>
+        <label for="node-config-input-pollingInterval"><i class="fa fa-refresh"></i> Polling Interval</label>
         <input type="text" id="node-config-input-pollingInterval">
         <span class="units">seconds</span>
     </div>
     <div class="form-row">
-        <label for="node-config-input-periodicReportInterval">
-            <i class="fa fa-clock-o"></i> Report Interval
-        </label>
+        <label for="node-config-input-periodicReportInterval"><i class="fa fa-clock-o"></i> Report Interval</label>
         <input type="text" id="node-config-input-periodicReportInterval">
         <span class="units">seconds</span>
     </div>
     <div class="form-row">
-        <label for="node-config-input-heartbeatInterval">
-            <i class="fa fa-heartbeat"></i> Heartbeat
-        </label>
+        <label for="node-config-input-heartbeatInterval"><i class="fa fa-heartbeat"></i> Heartbeat</label>
         <input type="text" id="node-config-input-heartbeatInterval">
         <span class="units">seconds</span>
     </div>
@@ -182,77 +163,11 @@ RED.nodes.registerType('galaxy-sia-config',{
         <input type="text" id="node-config-input-areaMap" placeholder='{"1":"Area 1","2":"Area 2"}'>
     </div>
     <div class="form-row">
-        <label for="node-config-input-externalMappingPath">
-            <i class="fa fa-file-text-o"></i> External Map
-        </label>
-        <input type="text" id="node-config-input-externalMappingPath">
+        <label for="node-config-input-mapFile"><i class="fa fa-file-text-o"></i> Mapping File</label>
+        <input type="text" id="node-config-input-mapFile">
     </div>
     <div class="form-row">
         <label for="node-config-input-debug"><i class="fa fa-bug"></i> Debug</label>
         <input type="checkbox" id="node-config-input-debug" style="width: auto;">
     </div>
-</script>
-
-<script type="text/html" data-help-name="galaxy-sia-config">
-    <p>Configuration node for Galaxy SIA DC-09 integration</p>
-    
-    <h3>Details</h3>
-    <dl class="message-properties">
-        <dt>Panel IP <span class="property-type">string</span></dt>
-        <dd>IP address of the Galaxy panel</dd>
-        
-        <dt>Panel Port <span class="property-type">number</span></dt>
-        <dd>Port number for SIA communication (default: 10002)</dd>
-        
-        <dt>Account <span class="property-type">string</span></dt>
-        <dd>Account identifier for SIA messages</dd>
-        
-        <dt>PIN <span class="property-type">password</span></dt>
-        <dd>PIN code for panel operations</dd>
-        
-        <dt>SIA Level <span class="property-type">number</span></dt>
-        <dd>SIA protocol level (1-9, default: 4)</dd>
-        
-        <dt class="optional">Encryption <span class="property-type">boolean</span></dt>
-        <dd>Enable message encryption</dd>
-        
-        <dt class="optional">Encryption Key <span class="property-type">string</span></dt>
-        <dd>Key for message encryption</dd>
-        
-        <dt class="optional">Key is HEX <span class="property-type">boolean</span></dt>
-        <dd>Encryption key is in hexadecimal format</dd>
-        
-        <dt class="optional">Discard Test Messages <span class="property-type">boolean</span></dt>
-        <dd>Filter out test messages (DUH)</dd>
-        
-        <dt>ACK Type <span class="property-type">string</span></dt>
-        <dd>Type of acknowledgment to send (default: SIA Packet)</dd>
-        
-        <dt class="optional">Custom ACK <span class="property-type">string</span></dt>
-        <dd>Custom acknowledgment string (when ACK Type is Custom)</dd>
-        
-        <dt>Polling Interval <span class="property-type">number</span></dt>
-        <dd>SIA inquiry interval in seconds (default: 10s)</dd>
-        
-        <dt>Report Interval <span class="property-type">number</span></dt>
-        <dd>Periodic report interval in seconds (0 to disable)</dd>
-        
-        <dt>Heartbeat <span class="property-type">number</span></dt>
-        <dd>Heartbeat interval in seconds (0 to disable)</dd>
-        
-        <dt class="optional">User ID <span class="property-type">string</span></dt>
-        <dd>User identifier for operations</dd>
-        
-        <dt class="optional">User Code <span class="property-type">string</span></dt>
-        <dd>User code for operations</dd>
-        
-        <dt class="optional">Zone/User/Area Maps <span class="property-type">object</span></dt>
-        <dd>JSON mapping for zones, users and areas</dd>
-        
-        <dt class="optional">External Map <span class="property-type">string</span></dt>
-        <dd>Path to external mapping file</dd>
-        
-        <dt class="optional">Debug <span class="property-type">boolean</span></dt>
-        <dd>Enable debug logging</dd>
-    </dl>
 </script>
