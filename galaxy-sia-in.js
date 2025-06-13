@@ -1,19 +1,58 @@
 module.exports = function(RED) {
+  const DEBUG = true;
   const net = require("net");
   const fs = require("fs");
   const parseSIA = require("./lib/sia-parser");
+  const siaCRC = parseSIA.siaCRC;
+  const pad = (num, len) => String(num).padStart(len, "0");
 
-  // Local helpers for SIA DC-09
-  function pad(num, len) {
-    let s = String(num);
-    while (s.length < len) s = "0" + s;
-    return s;
+  const HEARTBEAT_PAYLOAD = "\r\n0000#\r\n";
+  const HEARTBEAT_INTERVAL_DEFAULT = 60; // seconds
+  const MAX_CONNECTIONS = 20; // Prevent DoS
+
+  // --- UTILITIES ---
+
+  /**
+   * Extracts parameters from incoming SIA message for ACK generation.
+   * Returns { seq, receiver, line, account }
+   */
+  function parseAckParams(rawStr, config) {
+    let seq = "00";
+    let receiver = "R0";
+    let line = "L0";
+    let account = config && config.account ? config.account : "";
+
+    // Account: after # (at least 1, up to 16 chars)
+    const accountMatch = rawStr.match(/#([0-9A-Za-z]{1,16})/);
+    if (accountMatch) {
+      account = accountMatch[1];
+    }
+    // Sequence: inside [..]
+    const seqMatch = rawStr.match(/\[([0-9]{2})\]/);
+    if (seqMatch) {
+      seq = seqMatch[1];
+    }
+    // Receiver (R0, R1, ...)
+    const receiverMatch = rawStr.match(/R([0-9A-Za-z])/i);
+    if (receiverMatch) {
+      receiver = `R${receiverMatch[1]}`;
+    }
+    // Line (L0, L1, ...)
+    const lineMatch = rawStr.match(/L([0-9A-Za-z])/i);
+    if (lineMatch) {
+      line = `L${lineMatch[1]}`;
+    }
+    return { seq, receiver, line, account };
   }
 
-  function siaCRC(input) {
+  /**
+   * Calculates SIA CRC16-CCITT as specified by the protocol (poly 0x1021, init 0x0000)
+   * Returns 4 ASCII HEX characters.
+   */
+  function siaCRC16(body) {
     let crc = 0x0000;
-    for (let i = 0; i < input.length; i++) {
-      crc ^= input.charCodeAt(i) << 8;
+    for (let i = 0; i < body.length; i++) {
+      crc ^= body.charCodeAt(i) << 8;
       for (let j = 0; j < 8; j++) {
         crc = (crc & 0x8000)
           ? ((crc << 1) ^ 0x1021) & 0xffff
@@ -23,80 +62,102 @@ module.exports = function(RED) {
     return pad(crc.toString(16).toUpperCase(), 4);
   }
 
-  // Extract SIA ACK params from a raw message
-  function parseAckParams(rawStr, preferFullAccount) {
-    let seq = "00", receiver = "R0", line = "L0", account = "";
-    const accountMatch = rawStr.match(/#([0-9A-Za-z]{1,16})/);
-    if (accountMatch) account = accountMatch[1];
-    const seqMatch = rawStr.match(/\[([0-9]{2})\]/);
-    if (seqMatch) seq = seqMatch[1];
-    const receiverMatch = rawStr.match(/R([0-9A-Za-z])/i);
-    if (receiverMatch) receiver = `R${receiverMatch[1]}`;
-    const lineMatch = rawStr.match(/L([0-9A-Za-z])/i);
-    if (lineMatch) line = `L${lineMatch[1]}`;
-    // Account - either last 4 chars or full, by config
-    if (!preferFullAccount) account = account.toString().padStart(4, '0').slice(-4);
-    return { seq, receiver, line, account };
-  }
-
-  // Build full ACK packet
-  function buildAckPacket(seq, receiver, line, account, alwaysCRLF, preferFullAccount) {
-    const acct = preferFullAccount ? account : account.toString().padStart(4, '0').slice(-4);
+  /**
+   * Build ACK packet strictly per SIA DC-09 spec.
+   * @param {string} seq - 2 chars, from parsed message
+   * @param {string} receiver - 2 chars, from parsed message (default R0)
+   * @param {string} line - 2 chars, from parsed message (default L0)
+   * @param {string} account - last 4 chars (zero-padded)
+   * @returns {Buffer} ACK packet as ASCII buffer, ready for TCP send
+   */
+  function buildAckPacket(seq, receiver, line, account) {
+    // Always use the last 4 characters (zero-padded) of the account
+    const acct = account ? account.toString().padStart(4, '0').slice(-4) : "0000";
     const ackBody = `ACK${seq}${receiver}${line}#${acct}`;
-    if (ackBody.length !== 14) throw new Error(`ACK body must be 14 chars, got "${ackBody}"`);
+    if (ackBody.length !== 14) {
+      throw new Error(`ACK body length must be 14, got "${ackBody}" (${ackBody.length})`);
+    }
     const lenStr = pad(ackBody.length, 4);
-    const crc = siaCRC(ackBody);
-    let ack = `${lenStr}${ackBody}${crc}`;
-    if (alwaysCRLF) ack = `\r\n${ack}\r\n`;
+    const crc = siaCRC16(ackBody);
+    const ack = `\r\n${lenStr}${ackBody}${crc}\r\n`;
     return Buffer.from(ack, 'ascii');
   }
 
-  // Get correct ACK for any SIA message
-  function getAck(cfg, rawStr, node) {
-    const preferFullAccount = !!cfg.ackFullAccount;
-    const alwaysCRLF = cfg.ackAlwaysCRLF !== false; // default true
-    const { seq, receiver, line, account } = parseAckParams(rawStr, preferFullAccount);
+  /**
+   * Get correct ACK buffer for any incoming SIA message (handshake or event)
+   */
+  function getAckBuffer(cfg, rawStr, node) {
+    const params = parseAckParams(rawStr, cfg);
     try {
-      return buildAckPacket(seq, receiver, line, account, alwaysCRLF, preferFullAccount);
+      const ackBuf = buildAckPacket(params.seq, params.receiver, params.line, params.account);
+      node && node.debug && node.debug(`ACK: "${ackBuf.toString('ascii')}" [hex: ${ackBuf.toString('hex')}]`);
+      return ackBuf;
     } catch (e) {
       node && node.warn && node.warn(`Failed to build ACK: ${e.message}`);
-      // fallback: generic ACK
+      // fallback: default (may not be accepted by panel!)
       return Buffer.from("ACK\r\n", "ascii");
     }
   }
 
+  function sendAck(socket, ack, node) {
+    if (!socket || !socket.writable) {
+      if (node) node.warn("Socket není připraven pro odeslání ACK");
+      return;
+    }
+    try {
+      if (Buffer.isBuffer(ack)) {
+        socket.write(ack);
+      } else {
+        socket.write(Buffer.from(ack, 'ascii'));
+      }
+      node && node.debug && node.debug(`Sent ACK (${Buffer.isBuffer(ack) ? ack.length : Buffer.byteLength(ack)}) bytes: ${Buffer.isBuffer(ack) ? ack.toString('hex') : Buffer.from(ack, 'ascii').toString('hex')}`);
+    } catch (err) {
+      if (node) node.error(`Error sending ACK: ${err.message}`);
+    }
+  }
+
   function buildInquiryPacket(account, seq, type = "inquiry") {
-    const seqStr = seq.toString().padStart(4, '0');
+    const seqStr = pad(seq, 4);
     if (type === "heartbeat") {
-      return "\r\n0000#\r\n";
+      return HEARTBEAT_PAYLOAD;
     }
     return `I${account},${seqStr},00\r\n`;
+  }
+
+  function loadDynamicMapping(path, node) {
+    try {
+      if (!path) return null;
+      if (!fs.existsSync(path)) return null;
+      const content = fs.readFileSync(path, "utf-8");
+      const parsed = JSON.parse(content);
+      if (typeof parsed !== "object") throw new Error("Externí mapování není objekt");
+      return parsed;
+    } catch (e) {
+      if (node) node.warn("Nepodařilo se načíst externí mapování: " + e.message);
+      return null;
+    }
   }
 
   function GalaxySIAInNode(config) {
     RED.nodes.createNode(this, config);
     const node = this;
 
-    // Get config node
     const cfg = RED.nodes.getNode(config.config);
     if (!cfg) {
       node.error("Chybí konfigurační uzel");
-      node.status({ fill: "red", shape: "ring", text: "chybí konfigurace" });
+      node.status({fill:"red", shape:"ring", text:"chybí konfigurace"});
       return;
     }
 
     if (!cfg.panelPort || !cfg.account) {
       node.error("Chybí povinné konfigurační hodnoty (port nebo account)");
-      node.status({ fill: "red", shape: "ring", text: "neplatná konfigurace" });
+      node.status({fill:"red", shape:"ring", text:"neplatná konfigurace"});
       return;
     }
 
     let server;
     let sockets = [];
     let heartbeatTimer = null;
-    const HEARTBEAT_PAYLOAD = "\r\n0000#\r\n";
-    const HEARTBEAT_INTERVAL_DEFAULT = 60;
-    const MAX_CONNECTIONS = 20;
 
     function setStatus(text, color = "green", shape = "dot") {
       node.status({ fill: color, shape: shape, text: text });
@@ -129,7 +190,8 @@ module.exports = function(RED) {
     }
 
     function handleSocket(socket) {
-      socket.setNoDelay(true); // Disable Nagle's algorithm
+      socket.setNoDelay(true); // SIA panely vyžadují ACK v jednom TCP segmentu
+
       if (sockets.length >= MAX_CONNECTIONS) {
         socket.destroy();
         node.warn("Překročen maximální počet spojení");
@@ -145,10 +207,11 @@ module.exports = function(RED) {
           // Handshake detekce (F# nebo D#)
           const handshakeMatch = rawStr.match(/^([FD]#?[0-9A-Za-z]+)[^\r\n]*/);
           if (handshakeMatch) {
-            const ackBuf = getAck(cfg, handshakeMatch[1], node);
+            const ackBuf = getAckBuffer(cfg, handshakeMatch[1], node);
             if (socket && socket.writable) {
-              socket.write(ackBuf);
-              node.debug && node.debug(`Sent handshake ACK hex: ${ackBuf.toString('hex')}`);
+              sendAck(socket, ackBuf, node);
+            } else {
+              node.warn("Socket není připraven pro odeslání ACK");
             }
             setStatus("handshake");
 
@@ -164,7 +227,7 @@ module.exports = function(RED) {
             return;
           }
 
-          // Zpracuj SIA zprávu
+          // Pokud to není handshake, zkusíme parsovat jako SIA zprávu
           const parsed = parseSIA(
             rawStr,
             cfg.siaLevel,
@@ -176,11 +239,17 @@ module.exports = function(RED) {
           node.debug && node.debug(`Parsed SIA message: ${JSON.stringify(parsed)}`);
 
           if (parsed.valid) {
-            const ackBuf = getAck(cfg, rawStr, node);
+            // ACK podle skutečných hodnot ve zprávě!
+            const ackBuf = getAckBuffer(cfg, rawStr, node);
             if (socket && socket.writable) {
-              socket.write(ackBuf);
-              node.debug && node.debug(`Sent SIA ACK hex: ${ackBuf.toString('hex')}`);
+              sendAck(socket, ackBuf, node);
             }
+
+            node.debug && node.debug({
+              event: "message",
+              parsed: parsed,
+              ack: ackBuf
+            });
 
             node.send([{
               payload: {
@@ -217,8 +286,10 @@ module.exports = function(RED) {
 
     function startServer() {
       if (server) return;
+
       try {
         server = net.createServer(handleSocket);
+
         server.on("error", err => {
           node.error("Server error: " + err.message);
           setStatus("server error", "red", "dot");
@@ -238,6 +309,7 @@ module.exports = function(RED) {
 
     function stopServer(done) {
       stopHeartbeat();
+
       if (server) {
         try {
           server.close(() => {
@@ -251,9 +323,12 @@ module.exports = function(RED) {
       } else {
         if (done) done();
       }
+
       sockets.forEach(s => {
         try {
-          if (!s.destroyed) s.destroy();
+          if (!s.destroyed) {
+            s.destroy();
+          }
         } catch (err) {
           node.error("Error cleaning up socket: " + err.message);
         }
@@ -266,7 +341,9 @@ module.exports = function(RED) {
 
     this.on("close", function(removed, done) {
       stopServer(() => {
-        if (removed) { }
+        if (removed) {
+          // případný dodatečný cleanup
+        }
         done();
       });
     });
