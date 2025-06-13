@@ -19,7 +19,9 @@ module.exports = function(RED) {
 
   function buildAckPacket(account, seq = "00", rcv = "R0", lpref = "L0") {
     // 1. Vytvoříme základní ACK zprávu bez CR/LF
-    const ackBody = `ACK${seq}${rcv}${lpref}#${account}`;
+      // const ackBody = `ACK${seq}${rcv}${lpref}#${account}`;
+    // Podle SIA DC-09 stačí: "ACK" + seq + "#" + account
+    const ackBody = `ACK${seq}#${account}`;
     
     // 2. Spočítáme skutečnou délku těla zprávy BEZ CR/LF
     const bodyLength = Buffer.from(ackBody).length;
@@ -61,7 +63,8 @@ module.exports = function(RED) {
         const account = rawStr.split("#")[1].replace(/[^\d]/g, '');
         
         // Vytvoříme standardizovaný ACK packet
-        const ackStr = buildAckPacket(account);
+        //const ackStr = buildAckPacket(account);
+        const ackStr = buildAckPacket(account, "00");
         
         // Debug logging
         if (node && cfg.debug) {
