@@ -6,25 +6,65 @@ module.exports = function(RED) {
   const siaCRC = parseSIA.siaCRC;
   const pad = parseSIA.pad;
 
-  const HEARTBEAT_PAYLOAD = "\r\n0000#\r\n";
+  const HEARTBEAT_PAYLOAD = "HEARTBEAT";
   const HEARTBEAT_INTERVAL_DEFAULT = 60; // seconds
   const MAX_CONNECTIONS = 20; // Prevent DoS
-  const POLLING_SEQ_START = 1;
-  const POLLING_SEQ_MAX = 9999;
 
+  // Debug log
   function debugLog(node, message, data) {
     if (DEBUG && node && node.debug) {
       node.debug(message + (data ? `: ${JSON.stringify(data)}` : ''));
     }
   }
 
-  function buildAckPacket(account, seq = "00", rcv = "R0", lpref = "L0", crcFormat = "hex") {
-    const acct = account.toString().padStart(4, '0').slice(-4);
-    const ackBody = `ACK${seq}${rcv}${lpref}#${acct}`;
-    const bodyLength = Buffer.from(ackBody).length;
-    const lenStr = pad(bodyLength, 4);
-    const crc = siaCRC(ackBody);
+  /**
+   * Parse SIA DC-09 message for ACK construction
+   * Returns { seq, receiver, line, account }, with safe fallbacks (R0/L0)
+   */
+  function parseAckParams(rawStr) {
+    // Default fallback values
+    let seq = "00";
+    let receiver = "R0";
+    let line = "L0";
+    let account = "";
 
+    // Account: after # (at least 1, up to 16 chars)
+    const accountMatch = rawStr.match(/#([0-9A-Za-z]{1,16})/);
+    if (accountMatch) {
+      account = accountMatch[1];
+    }
+    // Sequence: inside [..]
+    const seqMatch = rawStr.match(/\[([0-9]{2})\]/);
+    if (seqMatch) {
+      seq = seqMatch[1];
+    }
+    // Receiver (R0, R1, ...)
+    const receiverMatch = rawStr.match(/R([0-9A-Za-z])/i);
+    if (receiverMatch) {
+      receiver = `R${receiverMatch[1]}`;
+    }
+    // Line (L0, L1, ...)
+    const lineMatch = rawStr.match(/L([0-9A-Za-z])/i);
+    if (lineMatch) {
+      line = `L${lineMatch[1]}`;
+    }
+    return { seq, receiver, line, account };
+  }
+
+  /**
+   * Build ACK packet exactly per SIA DC-09 spec
+   * @param {string} seq - 2 chars, from parsed message
+   * @param {string} receiver - 2 chars, from parsed message (default R0)
+   * @param {string} line - 2 chars, from parsed message (default L0)
+   * @param {string} account - last 4 chars
+   * @param {string} crcFormat - "hex" (default, ASCII) or "bin" (2B binary)
+   * @returns {Buffer} ACK packet (always ASCII for Reconeyez)
+   */
+  function buildAckPacket(seq, receiver, line, account, crcFormat = "hex") {
+    const acct = account.toString().padStart(4, '0').slice(-4);
+    const ackBody = `ACK${seq}${receiver}${line}#${acct}`;
+    const lenStr = pad(ackBody.length, 4);
+    const crc = siaCRC(ackBody);
     if (crcFormat === "bin") {
       const crcHigh = parseInt(crc.substring(0, 2), 16);
       const crcLow = parseInt(crc.substring(2, 4), 16);
@@ -34,38 +74,24 @@ module.exports = function(RED) {
         Buffer.from('\r\n', 'ascii')
       ]);
     } else {
+      // ASCII (hex), to je default pro Reconeyez a Home Assistant SIA
       return Buffer.from(`\r\n${lenStr}${ackBody}${crc}\r\n`, 'ascii');
     }
   }
 
+  /**
+   * Get correct ACK string/buffer for any incoming SIA message (handshake or event)
+   */
   function getAckString(cfg, rawStr, node) {
     const crcFormat = cfg.ackCrcFormat || "hex";
-    node.debug && node.debug(`Processing message for ACK: ${rawStr}`);
-    if (rawStr.startsWith("F#") || rawStr.startsWith("D#")) {
-      const seq = "00";
-      const account = (rawStr.split("#")[1] || "").match(/\d+/)?.[0] || "";
-      return buildAckPacket(account, seq, "R0", "L0", crcFormat);
-    }
-    switch (cfg.ackType) {
-      case "SIA_PACKET":
-        try {
-          const parsed = parseSIA(rawStr);
-          if (parsed.valid) {
-            return buildAckPacket(parsed.account, parsed.seq || "00", "R0", "L0", crcFormat);
-          }
-        } catch (e) {
-          node.warn && node.warn("Error creating SIA ACK packet: " + e.message);
-        }
-        return buildAckPacket(cfg.account, "00", "R0", "L0", crcFormat);
-      case "A_CRLF": return "A\r\n";
-      case "A": return "A";
-      case "ACK_CRLF": return "ACK\r\n";
-      case "ACK": return "ACK";
-      case "ECHO": return rawStr;
-      default: return "ACK\r\n";
-    }
+    // Získáme správné parametry z přijmuté zprávy
+    const params = parseAckParams(rawStr);
+    return buildAckPacket(params.seq, params.receiver, params.line, params.account, crcFormat);
   }
 
+  /**
+   * Odeslání ACK na socket (podpora buffer/string)
+   */
   function sendAck(socket, ack, node) {
     if (!socket || !socket.writable) {
       if (node) node.warn("Socket není připraven pro odeslání ACK");
@@ -83,10 +109,13 @@ module.exports = function(RED) {
     }
   }
 
+  /**
+   * Build Inquiry or Heartbeat packet (volitelné podle configu/panelu)
+   */
   function buildInquiryPacket(account, seq, type = "inquiry") {
     const seqStr = seq.toString().padStart(4, '0');
     if (type === "heartbeat") {
-      return HEARTBEAT_PAYLOAD;
+      return "\r\n0000#\r\n";
     }
     return `I${account},${seqStr},00\r\n`;
   }
@@ -126,8 +155,6 @@ module.exports = function(RED) {
     let server;
     let sockets = [];
     let heartbeatTimer = null;
-    let pollingTimers = [];
-    let inquirySeq = POLLING_SEQ_START;
 
     function setStatus(text, color = "green", shape = "dot") {
       node.status({ fill: color, shape: shape, text: text });
@@ -155,27 +182,6 @@ module.exports = function(RED) {
       }
     }
 
-    function startPolling(socket) {
-      stopPolling(socket);
-      const interval = Number(cfg.periodicReportInterval) || 10;
-      if (interval > 0) {
-        socket.poller = setInterval(() => {
-          if (socket.writable) {
-            const pkt = buildInquiryPacket(cfg.account, inquirySeq, cfg.pollingType);
-            socket.write(pkt);
-            inquirySeq = inquirySeq < POLLING_SEQ_MAX ? inquirySeq + 1 : POLLING_SEQ_START;
-            setStatus(`polling: ${cfg.pollingType} (${interval}s)`, "blue", "ring");
-          }
-        }, interval * 1000);
-        pollingTimers.push(socket.poller);
-      }
-    }
-    function stopPolling(socket) {
-      if (socket && socket.poller) {
-        clearInterval(socket.poller);
-        socket.poller = null;
-      }
-    }
     function cleanupSockets() {
       sockets = sockets.filter(s => !s.destroyed);
     }
@@ -189,18 +195,16 @@ module.exports = function(RED) {
       sockets.push(socket);
       setStatus("client connected");
 
-      startPolling(socket);
-
       socket.on("data", function(data) {
         const rawStr = data.toString();
         node.debug && node.debug(`Received raw data: ${rawStr}`);
         try {
-          // Handshake detekce
-          const h = rawStr.match(/^([FD]#?[0-9A-Za-z]+)[^\r\n]*/);
-          if (h) {
-            const ackStr = getAckString(cfg, h[1], node);
+          // Handshake detekce (F# nebo D#)
+          const handshakeMatch = rawStr.match(/^([FD]#?[0-9A-Za-z]+)[^\r\n]*/);
+          if (handshakeMatch) {
+            const ackBuf = getAckString(cfg, handshakeMatch[1], node);
             if (socket && socket.writable) {
-              sendAck(socket, ackStr, node);
+              sendAck(socket, ackBuf, node);
             } else {
               node.warn("Socket není připraven pro odeslání ACK");
             }
@@ -209,9 +213,9 @@ module.exports = function(RED) {
             node.send([{
               payload: {
                 type: "handshake",
-                ack: ackStr,
+                ack: ackBuf,
                 raw: rawStr,
-                account: h[1].split("#")[1],
+                account: handshakeMatch[1].split("#")[1],
                 timestamp: new Date().toISOString()
               }
             }, null]);
@@ -230,22 +234,24 @@ module.exports = function(RED) {
           node.debug && node.debug(`Parsed SIA message: ${JSON.stringify(parsed)}`);
 
           if (parsed.valid) {
-            const ackStr = getAckString(cfg, rawStr, node);
+            // ACK podle skutečných hodnot ve zprávě!
+            // Pokud zpráva obsahuje seq/receiver/line, použijeme je, jinak fallback
+            const ackBuf = getAckString(cfg, rawStr, node);
             if (socket && socket.writable) {
-              sendAck(socket, ackStr, node);
+              sendAck(socket, ackBuf, node);
             }
 
             node.debug && node.debug({
               event: "message",
               parsed: parsed,
-              ack: ackStr
+              ack: ackBuf
             });
 
             node.send([{
               payload: {
                 ...parsed,
                 type: "sia_message",
-                ack: ackStr,
+                ack: ackBuf,
                 raw: rawStr,
                 timestamp: new Date().toISOString()
               }
@@ -264,13 +270,11 @@ module.exports = function(RED) {
       });
 
       socket.on("close", () => {
-        stopPolling(socket);
         setStatus("client disconnected", "yellow", "ring");
         cleanupSockets();
       });
 
       socket.on("error", err => {
-        stopPolling(socket);
         node.error("Socket error: " + err.message);
         setStatus("socket error", "red", "ring");
       });
@@ -278,6 +282,7 @@ module.exports = function(RED) {
 
     function startServer() {
       if (server) return;
+
       try {
         server = net.createServer(handleSocket);
 
@@ -300,8 +305,7 @@ module.exports = function(RED) {
 
     function stopServer(done) {
       stopHeartbeat();
-      pollingTimers.forEach(t => clearInterval(t));
-      pollingTimers = [];
+
       if (server) {
         try {
           server.close(() => {
@@ -315,10 +319,12 @@ module.exports = function(RED) {
       } else {
         if (done) done();
       }
+
       sockets.forEach(s => {
         try {
-          stopPolling(s);
-          if (!s.destroyed) s.destroy();
+          if (!s.destroyed) {
+            s.destroy();
+          }
         } catch (err) {
           node.error("Error cleaning up socket: " + err.message);
         }
@@ -327,16 +333,20 @@ module.exports = function(RED) {
       setStatus("stopped", "grey", "ring");
     }
 
+    // Spuštění serveru při inicializaci
     startServer();
 
+    // Cleanup při zavření nodu
     this.on("close", function(removed, done) {
       stopServer(() => {
         if (removed) {
+          // Zde můžeme přidat další cleanup pokud je potřeba
         }
         done();
       });
     });
   }
 
+  // Registrace typu nodu
   RED.nodes.registerType("galaxy-sia-in", GalaxySIAInNode);
 };
