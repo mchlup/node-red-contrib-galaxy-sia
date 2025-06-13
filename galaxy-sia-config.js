@@ -14,9 +14,6 @@ module.exports = function(RED) {
         this.discardTestMessages = config.discardTestMessages || false;
         this.ackType = config.ackType || "A_CRLF";
         this.ackCustom = config.ackCustom;
-        this.ackCrcFormat = config.ackCrcFormat || "hex";
-        this.pollingType = config.pollingType || "inquiry";
-        this.pollingInterval = config.pollingInterval || 10;
         this.periodicReportInterval = config.periodicReportInterval || 0;
         this.userId = config.userId;
         this.userCode = config.userCode;
@@ -25,6 +22,10 @@ module.exports = function(RED) {
         this.userMap = config.userMap;
         this.areaMap = config.areaMap;
         this.externalMappingPath = config.externalMappingPath;
+        this.debug = config.debug || false;
+        // Nové volby:
+        this.ackCrcFormat = config.ackCrcFormat || "hex";
+        this.pollingType = config.pollingType || "inquiry";
 
         // Properly handle credentials
         if (this.credentials) {
