@@ -12,13 +12,8 @@ RED.nodes.registerType('galaxy-sia-config',{
         encryptionKey:         { value:"" },
         encryptionHex:         { value:false },
         discardTestMessages:   { value:false },
-        ackType:               { value:"A_CRLF" },
-        ackCustom: { 
-            value: "", 
-            validate: function(v) { 
-                return (this.ackType === "CUSTOM") ? v.trim().length > 0 : true; 
-            }
-        },
+        ackType:               { value:"SIA_PACKET" },
+        ackCustom:             { value:"" },
         periodicReportInterval: { value:0, required:true, validate:RED.validators.number() },
         userId:                { value:"" },
         userCode:              { value:"" },
@@ -29,7 +24,9 @@ RED.nodes.registerType('galaxy-sia-config',{
         externalMappingPath:   { value:"" },
         debug:                 { value:false },
         ackCrcFormat:          { value:"hex" },
-        pollingType:           { value:"inquiry" }
+        pollingType:           { value:"inquiry" },
+        ackFullAccount:        { value:false },
+        ackAlwaysCRLF:         { value:true }
     },
     credentials: {
         pin: { type: "password" }
@@ -41,44 +38,20 @@ RED.nodes.registerType('galaxy-sia-config',{
         return this.name || this.panelIP || "galaxy-sia-config";
     },
     oneditprepare: function() {
-        $("#node-input-panelPort").spinner({
-            min:1,
-            max:65535
-        });
-        
-        $("#node-input-ackType").on("change", function() {
-            if ($(this).val() === "CUSTOM") {
-                $("#ack-custom-row").show();
-            } else {
-                $("#ack-custom-row").hide();
-            }
-        }).trigger("change");
-
-        // Inicializace spinnerů pro číselné hodnoty
-        $("#node-input-siaLevel").spinner({
-            min:1,
-            max:9
-        });
-        $("#node-input-periodicReportInterval").spinner({
-            min:0
-        });
-        $("#node-input-heartbeatInterval").spinner({
-            min:0
-        });
-
-        // Nové volby
+        $("#node-input-panelPort").spinner({min:1,max:65535});
+        $("#node-input-siaLevel").spinner({min:1,max:9});
+        $("#node-input-periodicReportInterval").spinner({min:0});
+        $("#node-input-heartbeatInterval").spinner({min:0});
         $("#node-config-input-ackCrcFormat").val(this.ackCrcFormat || "hex");
         $("#node-config-input-pollingType").val(this.pollingType || "inquiry");
+        $("#node-config-input-ackFullAccount").prop("checked", this.ackFullAccount === true);
+        $("#node-config-input-ackAlwaysCRLF").prop("checked", this.ackAlwaysCRLF !== false);
     },
     oneditsave: function() {
-        // Validace a čištění hodnot před uložením
-        this.panelPort = parseInt(this.panelPort);
-        this.siaLevel = parseInt(this.siaLevel);
-        this.periodicReportInterval = parseInt(this.periodicReportInterval);
-        this.heartbeatInterval = parseInt(this.heartbeatInterval);
-        // Nové volby
         this.ackCrcFormat = $("#node-config-input-ackCrcFormat").val();
         this.pollingType = $("#node-config-input-pollingType").val();
+        this.ackFullAccount = $("#node-config-input-ackFullAccount").is(":checked");
+        this.ackAlwaysCRLF = $("#node-config-input-ackAlwaysCRLF").is(":checked");
     }
 });
 </script>
@@ -127,15 +100,12 @@ RED.nodes.registerType('galaxy-sia-config',{
     <div class="form-row">
         <label for="node-config-input-ackType"><i class="fa fa-reply"></i> ACK Type</label>
         <select id="node-config-input-ackType">
+            <option value="SIA_PACKET">SIA Packet</option>
             <option value="A_CRLF">A\r\n</option>
             <option value="A">A</option>
             <option value="ACK_CRLF">ACK\r\n</option>
             <option value="ACK">ACK</option>
             <option value="ECHO">Echo</option>
-            <option value="ECHO_TRIM_END">Echo (trim end)</option>
-            <option value="ECHO_STRIP_NONPRINT">Echo (strip non-print)</option>
-            <option value="ECHO_TRIM_BOTH">Echo (trim both)</option>
-            <option value="SIA_PACKET">SIA Packet</option>
             <option value="CUSTOM">Custom</option>
         </select>
     </div>
@@ -147,7 +117,6 @@ RED.nodes.registerType('galaxy-sia-config',{
         <label for="node-config-input-ackCrcFormat"><i class="fa fa-shield"></i> ACK CRC Format</label>
         <select id="node-config-input-ackCrcFormat">
             <option value="hex">Hex (ASCII)</option>
-            <option value="bin">Binární (2B)</option>
         </select>
     </div>
     <div class="form-row">
@@ -156,6 +125,14 @@ RED.nodes.registerType('galaxy-sia-config',{
             <option value="inquiry">Inquiry</option>
             <option value="heartbeat">Heartbeat</option>
         </select>
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-ackFullAccount"><i class="fa fa-list-ol"></i> Use full account in ACK</label>
+        <input type="checkbox" id="node-config-input-ackFullAccount" style="width: auto;">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-ackAlwaysCRLF"><i class="fa fa-exchange"></i> Always CRLF at start/end</label>
+        <input type="checkbox" id="node-config-input-ackAlwaysCRLF" style="width: auto;">
     </div>
     <div class="form-row">
         <label for="node-config-input-periodicReportInterval">
