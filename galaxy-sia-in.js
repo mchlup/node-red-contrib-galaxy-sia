@@ -30,16 +30,26 @@ module.exports = function(RED) {
     }
 
     // Sestaví SIA DC-09 ACK paket: \r\n + 4B len + 14B body + 4B CRC + \r\n
-    function buildAckPacket(account, seq = "00", rcv = "R0", lpref = "L0") {
-        const acct = account.toString().padStart(ACCOUNT_PAD_LENGTH, '0').slice(-ACCOUNT_PAD_LENGTH);
+    function buildAckPacket(account, seq = "00", rcv = "R0", lpref = "L0", crcFormat = "hex") {
+        const acct = account.toString().padStart(4, '0').slice(-4);
         const ackBody = `ACK${seq}${rcv}${lpref}#${acct}`;
-        if (ackBody.length !== ACK_BODY_LENGTH) {
-            console.warn(`ACK BODY length is NOT ${ACK_BODY_LENGTH}: ${ackBody.length} [${ackBody}]`);
+        const lenStr = pad(ackBody.length, 4);
+        const crc = siaCRC(ackBody); // string, např. "9C54"
+        let packet;
+
+        if (crcFormat === "bin") {
+            // Binární CRC: převod 4hex na 2 bajty
+            const crcHigh = parseInt(crc.substring(0, 2), 16);
+            const crcLow = parseInt(crc.substring(2, 4), 16);
+            packet = Buffer.concat([
+                Buffer.from('\r\n' + lenStr + ackBody, 'ascii'),
+                Buffer.from([crcHigh, crcLow]),
+                Buffer.from('\r\n', 'ascii')
+            ]);
+        } else {
+            // Výchozí HEX CRC
+            packet = Buffer.from(`\r\n${lenStr}${ackBody}${crc}\r\n`, 'ascii');
         }
-        const lenStr = pad(ACK_BODY_LENGTH, 4);
-        const crc = siaCRC(ackBody);
-        const packet = `\r\n${lenStr}${ackBody}${crc}\r\n`;
-        debugLog(null, 'Built ACK packet', { packet, bytes: packet.length });
         return packet;
     }
 
@@ -55,7 +65,9 @@ module.exports = function(RED) {
         if (/^[FD]#?\d+/.test(rawStr)) {
             try {
                 const account = rawStr.split('#')[1].replace(/\D/g, '');
-                return buildAckPacket(account, "00");
+                const crcFormat = cfg.ackCrcFormat || "hex";
+                // return buildAckPacket(account, "00");
+                return buildAckPacket(account, "00", "R0", "L0", crcFormat);
             } catch (err) {
                 if (node && node.error) node.error(`Handshake ACK error: ${err.message}`);
                 // Vrať fallback, ale ideálně pořád SIA packet
@@ -96,7 +108,12 @@ module.exports = function(RED) {
             return;
         }
         try {
-            socket.write(Buffer.from(ackStr, 'ascii'));
+            // ackStr je buď string nebo Buffer:
+                if (Buffer.isBuffer(ackStr)) {
+                    socket.write(ackStr);
+                } else {
+                    socket.write(Buffer.from(ackStr, 'ascii'));
+                }
             debugLog(node, `Sent ACK (${ackStr.length}B)`);
         } catch (e) {
             if (node && node.error) node.error(`sendAck error: ${e.message}`);
