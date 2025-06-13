@@ -56,7 +56,6 @@ module.exports = function(RED) {
     // Handshake detekce a zpracování
     if (rawStr.startsWith("F#") || rawStr.startsWith("D#")) {
         try {
-            // Extrahujeme account číslo bez #
             const account = rawStr.split("#")[1].replace(/[^\d]/g, '');
             // Pro handshake použijeme seq="00"
             const ackStr = buildAckPacket(account, "00");
@@ -80,6 +79,11 @@ module.exports = function(RED) {
                 if (parsed.valid) {
                     // Použijeme sekvenční číslo z příchozí zprávy
                     return buildAckPacket(parsed.account, parsed.seq || "00");
+                }
+            } catch (e) {
+                if (node) node.warn(`Error creating SIA ACK packet: ${e.message}`);
+            }
+            return buildAckPacket(cfg.account, "00");
                 }
             } catch (e) {
                 if (node) node.warn(`Error creating SIA ACK packet: ${e.message}`);
