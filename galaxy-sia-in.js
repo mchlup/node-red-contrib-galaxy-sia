@@ -207,7 +207,10 @@ module.exports = function(RED) {
           // Handshake detekce (F# nebo D#)
           const handshakeMatch = rawStr.match(/^([FD]#?[0-9A-Za-z]+)[^\r\n]*/);
           if (handshakeMatch) {
-            const ackBuf = getAckBuffer(cfg, handshakeMatch[1], node);
+            //const ackBuf = getAckBuffer(cfg, handshakeMatch[1], node);
+            const ackBuf = getAckBuffer(cfg, rawStr, node);
+            console.log("ACK HEX:", ackBuf.toString('hex'));
+            console.log("ACK ASCII:", ackBuf.toString('ascii'));
             if (socket && socket.writable) {
               sendAck(socket, ackBuf, node);
             } else {
