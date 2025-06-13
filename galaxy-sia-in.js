@@ -17,10 +17,11 @@ module.exports = function(RED) {
     }
   }
 
-  function buildAckPacket(account, seq = "00") {
-    // 1. Vytvoříme základní ACK zprávu podle specifikace SIA DC-09
-    // Format: ACKssaaaaaaa (bez #)
-    const ackBody = `ACK${seq}${account}`;
+  function buildAckPacket(account, seq = "00", rcv = "R0", lpref = "L0") {
+    // 1. Vytvoříme základní ACK zprávu bez zbytečných parametrů
+    // Podle SIA DC-09 stačí: "ACK" + seq + "#" + account
+    const ackBody = `ACK${seq}#${account}`;
+    const account = (rawStr.split("#")[1] || "").match(/\d+/)?.[0] || "";
     
     // 2. Spočítáme skutečnou délku těla zprávy
     const bodyLength = Buffer.from(ackBody).length;
@@ -46,26 +47,25 @@ module.exports = function(RED) {
     }
     
     return finalPacket;
-}
+  }
 
   function getAckString(cfg, rawStr, node) {
-    if (node && cfg.debug) {
-        node.debug(`Raw ACK input: ${Buffer.from(rawStr).toString('hex')}`);
-    }
-    
-    // Handshake detekce a zpracování
+    node.debug(`Processing message for ACK: ${rawStr}`);
+    // Pro handshake používáme specifický formát
     if (rawStr.startsWith("F#") || rawStr.startsWith("D#")) {
-        try {
-            const account = rawStr.split("#")[1].replace(/[^\d]/g, '');
-            // Pro handshake použijeme seq="00"
-            const ackStr = buildAckPacket(account, "00");
-            
-            if (node && cfg.debug) {
-                node.debug(`Handshake ACK generated: ${Buffer.from(ackStr).toString('hex')}`);
-            }
-            
-            return ackStr;
-        } catch (err) {
+      // Oprava: extrakce účtu jen jako čísla
+      const account = (rawStr.split("#")[1] || "").match(/\d+/)?.[0] || "";
+      const ackBody = `ACK00R0L0#${account}`;
+      node.debug(`ACK BODY: "${ackBody}", length: ${ackBody.length}, bytes: ${[...Buffer.from(ackBody)]}`);
+      if (ackBody.length !== 14) {
+          node.warn(`ACK BODY length is NOT 14: ${ackBody.length} [${ackBody}]`);
+      }
+      const len = ackBody.length.toString().padStart(4, '0');
+      const crc = parseSIA.siaCRC(ackBody);
+      const ackStr = `\r\n${len}${ackBody}${crc}\r\n`;
+      node.debug(`Sending handshake ACK: ${ackStr}`);
+      return ackStr;
+      } catch (err) {
             if (node) node.error(`Error creating handshake ACK: ${err.message}`);
             return "ACK\r\n";
         }
