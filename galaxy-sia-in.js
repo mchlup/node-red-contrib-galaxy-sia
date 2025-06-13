@@ -21,8 +21,7 @@ module.exports = function(RED) {
     // 1. Vytvoříme základní ACK zprávu bez zbytečných parametrů
     // Podle SIA DC-09 stačí: "ACK" + seq + "#" + account
     const ackBody = `ACK${seq}#${account}`;
-    const account = (rawStr.split("#")[1] || "").match(/\d+/)?.[0] || "";
-    
+        
     // 2. Spočítáme skutečnou délku těla zprávy
     const bodyLength = Buffer.from(ackBody).length;
     
