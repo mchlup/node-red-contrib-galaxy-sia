@@ -6,12 +6,11 @@ module.exports = function(RED) {
   const siaCRC = parseSIA.siaCRC;
   const pad = parseSIA.pad;
 
-  const HEARTBEAT_PAYLOAD = "HEARTBEAT";
+  // Default interval: 60 s
   const HEARTBEAT_INTERVAL_DEFAULT = 60; // seconds
-  const MAX_CONNECTIONS = 20; // Prevent DoS
-  const ACK_LENGTH = 26; // Očekávaná délka ACK zprávy (včetně CRLF)
+  const MAX_CONNECTIONS = 20;
+  const ACK_LENGTH = 26;
 
-  // Pomocné funkce pro validaci
   function validateAckLength(ackBuffer) {
     return ackBuffer.length === ACK_LENGTH;
   }
@@ -31,30 +30,35 @@ module.exports = function(RED) {
   function createAckMessage(message, node) {
     try {
       // 1. Extrahuj sequence nebo použij default "00"
-      const seqMatch = message.match(/\[([0-9A-F]{2})\]/);
+      const seqMatch = message.match(/\[([0-9A-F]{2})\]/i);
       const seq = seqMatch ? seqMatch[1] : "00";
 
       // 2. Extrahuj receiver/line nebo použij defaulty
-      const rcvMatch = message.match(/R([0-9A-F])/);
-      const lineMatch = message.match(/L([0-9A-F])/);
+      const rcvMatch = message.match(/R([0-9A-F])/i);
+      const lineMatch = message.match(/L([0-9A-F])/i);
       const receiver = rcvMatch ? `R${rcvMatch[1]}` : "R0";
       const line = lineMatch ? `L${lineMatch[1]}` : "L0";
 
-      // 3. Extrahuj account a vezmi poslední 4 znaky
-      const accMatch = message.match(/#([0-9A-F]+)/);
-      let account = accMatch ? accMatch[1] : "0000";
-      account = account.slice(-4); // Vždy jen poslední 4 znaky
+      // 3. Extrahuj account (HEX) a doplň zleva nulami na 4 znaky
+      const accMatch = message.match(/#([0-9A-F]+)/i);
+      let account = accMatch ? accMatch[1].toUpperCase() : "0000";
+      account = account.replace(/[^0-9A-F]/gi, ""); // pouze platné znaky
+      if (account.length < 4) {
+        account = account.padStart(4, "0");
+      } else if (account.length > 4) {
+        account = account.slice(-4);
+      }
 
       // 4. Vytvoř tělo ACK zprávy přesně podle specifikace
       const ackBody = `ACK${seq}${receiver}${line}#${account}`;
-      
+
       // 5. Vypočítej délku těla (4 číslice) a CRC
       const lenStr = pad(ackBody.length, 4);
       const crc = siaCRC(ackBody).toUpperCase();
 
       // 6. Sestav kompletní ACK s CRLF na začátku i konci
       const finalAck = `\r\n${lenStr}${ackBody}${crc}\r\n`;
-      
+
       // 7. Převeď na Buffer v ASCII kódování
       const ackBuffer = Buffer.from(finalAck, 'ascii');
 
@@ -94,25 +98,32 @@ module.exports = function(RED) {
     }
 
     try {
-      // Vypni Naglův algoritmus pro okamžité odeslání
       socket.setNoDelay(true);
-      
-      // Ověř délku před odesláním
+
       if (!validateAckLength(ackBuffer)) {
         throw new Error(`Invalid ACK length before send: ${ackBuffer.length}`);
       }
 
-      // Debug logging
       if (node && node.debug) {
         node.debug(`Sending ACK: ${ackBuffer.toString('hex')} (${ackBuffer.length} bytes)`);
       }
 
-      // Odešli v jednom write() volání
       socket.write(ackBuffer);
     } catch (err) {
       if (node) node.error(`Error sending ACK: ${err.message}`);
       throw err;
     }
+  }
+
+  /**
+   * Sestaví SIA Inquiry polling dotaz dle DC-09: I<account>,00,00\r\n
+   */
+  function createInquiryMessage(account, seq = "00") {
+    // Účet vždy 3–16 HEX znaků, použij celý trimmed/uppercase z konfigurace
+    let acc = (account || "").toString().toUpperCase().replace(/[^0-9A-F]/g, "");
+    if (acc.length < 3) acc = acc.padStart(3, "0");
+    // Sekvence zde vždy "00", případně by šla inkrementovat
+    return `I${acc},${seq},00\r\n`;
   }
 
   function GalaxySIAInNode(config) {
@@ -127,10 +138,16 @@ module.exports = function(RED) {
       return;
     }
 
-    // Ověření konfigurace
+    // Trim a validace účtu v konfiguraci
     if (!cfg.panelPort || !cfg.account) {
       node.error("Chybí povinné konfigurační hodnoty (port nebo account)");
       node.status({fill:"red", shape:"ring", text:"neplatná konfigurace"});
+      return;
+    }
+    cfg.account = cfg.account.toString().trim().toUpperCase().replace(/[^0-9A-F]/g, "");
+    if (cfg.account.length < 3) {
+      node.error("Account musí být nejméně 3 hex znaky.");
+      node.status({fill:"red", shape:"ring", text:"neplatný účet"});
       return;
     }
 
@@ -145,14 +162,23 @@ module.exports = function(RED) {
     function startHeartbeat() {
       stopHeartbeat();
       const interval = Number(cfg.heartbeatInterval) || HEARTBEAT_INTERVAL_DEFAULT;
+      const pollingType = cfg.pollingType || "inquiry";
       if (interval > 0) {
         heartbeatTimer = setInterval(() => {
           sockets.forEach(socket => {
             if (socket.writable) {
-              socket.write(HEARTBEAT_PAYLOAD);
+              if (pollingType === "inquiry") {
+                // Správný SIA polling dotaz
+                socket.write(createInquiryMessage(cfg.account));
+                node.debug(`Sent INQUIRY polling: ${createInquiryMessage(cfg.account).replace(/\r\n$/, "")}`);
+              } else {
+                // fallback staré "HEARTBEAT"
+                socket.write("HEARTBEAT");
+                node.debug("Sent legacy HEARTBEAT");
+              }
             }
           });
-          setStatus("heartbeat sent", "blue", "ring");
+          setStatus("polling sent", "blue", "ring");
         }, interval * 1000);
       }
     }
@@ -169,27 +195,26 @@ module.exports = function(RED) {
     }
 
     function handleSocket(socket) {
-      // Nastav TCP socket options
-      socket.setNoDelay(true); // Vypni Naglův algoritmus
-      socket.setKeepAlive(true, 30000); // Nastav TCP keepalive
+      socket.setNoDelay(true);
+      socket.setKeepAlive(true, 30000);
 
       if (sockets.length >= MAX_CONNECTIONS) {
         socket.destroy();
         node.warn("Překročen maximální počet spojení");
         return;
       }
-      
+
       sockets.push(socket);
       setStatus("client connected");
 
       socket.on("data", function(data) {
-        const rawStr = data.toString();
+        const rawStr = data.toString().trim(); // DŮLEŽITÉ: trim!
         node.debug(`Received raw data: ${rawStr}`);
-        
+
         try {
           // Zpracuj handshake a běžné zprávy
           const ackBuffer = createAckMessage(rawStr, node);
-          
+
           if (socket && socket.writable) {
             sendAck(socket, ackBuffer, node);
           }
@@ -198,15 +223,21 @@ module.exports = function(RED) {
           if (rawStr.match(/^([FD]#?[0-9A-Za-z]+)/)) {
             // Handshake
             setStatus("handshake");
+            let acc = "";
+            const m = rawStr.match(/^([FD]#?)([0-9A-Za-z]+)/);
+            if (m && m[2]) acc = m[2].replace(/[^0-9A-Za-z]/g, "");
             node.send([{
               payload: {
                 type: "handshake",
                 ack: ackBuffer,
                 raw: rawStr,
-                account: rawStr.split("#")[1],
+                account: acc,
                 timestamp: new Date().toISOString()
               }
             }, null]);
+            // Po handshake pošli polling ihned (doporučené pro Galaxy)
+            socket.write(createInquiryMessage(cfg.account));
+            node.debug(`Immediately sent INQUIRY after handshake: ${createInquiryMessage(cfg.account).replace(/\r\n$/, "")}`);
           } else {
             // Pokus se zpracovat jako SIA zprávu
             const parsed = parseSIA(
