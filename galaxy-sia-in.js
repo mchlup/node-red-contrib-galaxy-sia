@@ -1,189 +1,163 @@
+/**
+ * Node-RED node for Honeywell Galaxy SIA DC-09 integration.
+ * (C) 2021-2024 Michal Lupinek
+ * Modifikace: Oprava handshake/ACK a přidání správného DC-09 polling inquiry.
+ */
+
 const net = require('net');
-const { createAckMessage, validateAckLength } = require('./lib/sia-ack');
+const { createAckMessage } = require('./lib/sia-ack');
 const { parseSIA } = require('./lib/sia-parser');
 
-// Default configuration
 const HEARTBEAT_INTERVAL_DEFAULT = 60; // seconds
+const HEARTBEAT_PAYLOAD = "HEARTBEAT";
+const MAX_CONNECTIONS = 20;
 
 module.exports = function(RED) {
-  function GalaxySIAInNode(config) {
-    RED.nodes.createNode(this, config);
-    const node = this;
+    function GalaxySiaInNode(config) {
+        RED.nodes.createNode(this, config);
+        const node = this;
 
-    // Trim and validate account from config
-    function normalizeAccount(acct) {
-      if (!acct) return '';
-      return String(acct).trim().toUpperCase().replace(/[^0-9A-F]/g, '');
-    }
-    const account = normalizeAccount(config.account);
+        // Trim a uprav config.account
+        config.account = (config.account || "").trim().toUpperCase();
 
-    let server = null;
-    let sockets = [];
-    let heartbeatInterval = parseInt(config.heartbeatInterval, 10) || HEARTBEAT_INTERVAL_DEFAULT;
-    let pollingType = config.pollingType === 'inquiry' ? 'inquiry' : 'heartbeat';
-    let seq = 0;
+        const port = Number(config.port) || 10000;
+        const heartbeatInterval = Number(config.heartbeatInterval) || HEARTBEAT_INTERVAL_DEFAULT;
+        const pollingType = config.pollingType || "inquiry";
 
-    function getSeqStr() {
-      // Sequence as two digit string (rollover at 99)
-      const s = ('0' + (seq % 100)).slice(-2);
-      seq = (seq + 1) % 100;
-      return s;
-    }
+        let server, heartbeatTimer = null, sockets = [];
 
-    function sendPolling(socket, lastHandshakeAccount) {
-      if (pollingType === 'inquiry') {
-        // Use last known account from handshake if available, else config
-        const acct = lastHandshakeAccount || account;
-        if (!acct) return;
-        const pollingMsg = `I${acct},${getSeqStr()},00\r\n`;
-        socket.write(pollingMsg);
-        node.status({ fill: "blue", shape: "ring", text: "inquiry sent" });
-      } else {
-        socket.write("HEARTBEAT");
-        node.status({ fill: "grey", shape: "ring", text: "heartbeat sent" });
-      }
-    }
-
-    function startHeartbeat(socket, lastHandshakeAccount) {
-      // Send first polling immediately on handshake
-      sendPolling(socket, lastHandshakeAccount);
-
-      // Then start interval
-      socket._heartbeatTimer = setInterval(() => {
-        if (socket.destroyed) return;
-        sendPolling(socket, lastHandshakeAccount);
-      }, heartbeatInterval * 1000);
-    }
-
-    function stopHeartbeat(socket) {
-      if (socket._heartbeatTimer) {
-        clearInterval(socket._heartbeatTimer);
-        socket._heartbeatTimer = null;
-      }
-    }
-
-    function closeAllSockets() {
-      sockets.forEach((s) => {
-        stopHeartbeat(s);
-        s.destroy();
-      });
-      sockets = [];
-    }
-
-    function onSocketData(socket, data) {
-      // Always trim input
-      const rawStr = data.toString().trim();
-
-      // Handshake detection: F#... or D#...
-      const handshakeMatch = rawStr.match(/^([FD]#?[0-9A-Za-z]+)/);
-      if (handshakeMatch) {
-        // Normalize handshake account
-        let handshakeAccount = '';
-        const idx = rawStr.indexOf('#');
-        if (idx !== -1) {
-          handshakeAccount = rawStr.substring(idx + 1).replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+        function sendInquiry(socket, account, seq = "00") {
+            // Inquiry zpráva dle DC-09: I<account>,<seq>,00\r\n
+            const acc = (account || config.account || "").trim().toUpperCase();
+            // Z historických důvodů je sekvence často "00"
+            const message = `I${acc},${seq},00\r\n`;
+            socket.write(message);
+            node.status({fill:"blue",shape:"dot",text:`inquiry sent (${acc})`});
         }
-        // Compose and send ACK
-        try {
-          const ackBuffer = createAckMessage(rawStr);
 
-          if (!validateAckLength(ackBuffer)) {
-            throw new Error("Invalid ACK length");
-          }
-          socket.write(ackBuffer);
-
-          // Start heartbeat/polling logic for this socket
-          stopHeartbeat(socket);
-          startHeartbeat(socket, handshakeAccount);
-
-          // Send to first output: handshake event
-          node.send([{
-            payload: {
-              type: "handshake",
-              account: handshakeAccount,
-              raw: rawStr,
-              ack: ackBuffer.toString('ascii')
-            }
-          }, null]);
-          node.status({ fill: "green", shape: "dot", text: "handshake ack" });
-        } catch (err) {
-          node.warn("Failed to generate/send ACK: " + err.message);
-          node.status({ fill: "red", shape: "dot", text: "ACK error" });
+        function sendHeartbeat(socket) {
+            socket.write(HEARTBEAT_PAYLOAD);
+            node.status({fill:"blue",shape:"dot",text:"heartbeat sent"});
         }
-        return;
-      }
 
-      // Normal SIA message
-      try {
-        const parsed = parseSIA(rawStr, config.siaLevel, config.encryption, config.key, config.hex);
-        // Always ACK immediately
-        let ackBuffer;
-        try {
-          ackBuffer = createAckMessage(rawStr);
-          if (validateAckLength(ackBuffer)) {
-            socket.write(ackBuffer);
-          }
-        } catch (e) {
-          // If failed to make ACK, just log
-          node.warn("Failed to generate/send ACK for SIA: " + e.message);
+        function startPolling() {
+            if (heartbeatTimer) clearInterval(heartbeatTimer);
+            heartbeatTimer = setInterval(() => {
+                sockets.forEach((socketObj) => {
+                    if (socketObj.socket && !socketObj.socket.destroyed) {
+                        if (pollingType === "inquiry") {
+                            sendInquiry(socketObj.socket, socketObj.account, "00");
+                        } else {
+                            sendHeartbeat(socketObj.socket);
+                        }
+                    }
+                });
+            }, heartbeatInterval * 1000);
         }
-        // Only forward if parsed as valid
-        if (parsed.valid) {
-          node.send([{
-            payload: {
-              type: "sia_message",
-              parsed,
-              raw: rawStr,
-              ack: ackBuffer ? ackBuffer.toString('ascii') : null,
-              timestamp: Date.now()
-            }
-          }, null]);
-        } else {
-          node.warn("Invalid SIA message: " + rawStr + (parsed.error ? " (" + parsed.error + ")" : ""));
-          node.status({ fill: "yellow", shape: "dot", text: "invalid sia" });
+
+        function stopPolling() {
+            if (heartbeatTimer) clearInterval(heartbeatTimer);
+            heartbeatTimer = null;
         }
-      } catch (err) {
-        node.warn("Error parsing SIA message: " + err.message);
-        node.status({ fill: "red", shape: "dot", text: "parse error" });
-      }
+
+        // TCP server nastavení
+        server = net.createServer((socket) => {
+            // TCP socket nastavení
+            socket.setNoDelay(true);
+            socket.setKeepAlive(true, 60000);
+
+            // Vytvořit záznam pro správu spojení
+            const socketObj = { socket, account: null };
+            sockets.push(socketObj);
+
+            node.status({fill:"yellow",shape:"dot",text:"připojeno"});
+
+            socket.on('data', (data) => {
+                let rawStr = data.toString().trim(); // Ořež CR/LF
+
+                // Detekce handshake (F#... nebo D#...)
+                const handshakeMatch = /^([FD]#?[0-9A-Za-z]+)/.exec(rawStr);
+                if (handshakeMatch) {
+                    // Extrakce účtu (po #), opět trim + uppercase
+                    let account = "";
+                    const accMatch = /#([0-9A-Za-z]+)/.exec(rawStr);
+                    if (accMatch) account = accMatch[1].trim().toUpperCase();
+
+                    socketObj.account = account;
+                    // Vytvoř ACK (vždy padnutý účet na 4 znaky)
+                    let ackBuffer;
+                    try {
+                        ackBuffer = createAckMessage(rawStr);
+                        socket.write(ackBuffer);
+                    } catch (err) {
+                        node.warn(`ACK generování selhalo: ${err}`);
+                        node.status({fill:"red",shape:"ring",text:"ACK error"});
+                        return;
+                    }
+                    // Odpověď na handshake
+                    node.send([
+                        { payload: { type: "handshake", raw: rawStr, account, ack: ackBuffer }, topic: "handshake" },
+                        null
+                    ]);
+                    node.status({fill:"green",shape:"dot",text:"handshake"});
+
+                    // Po handshake ihned pošli inquiry, pokud nastaveno
+                    if (pollingType === "inquiry") {
+                        sendInquiry(socket, account, "00");
+                    }
+                    return;
+                }
+
+                // Není handshake - parsuj jako SIA zprávu
+                const parsed = parseSIA(rawStr, config.siaLevel, config.encryption, config.key, config.hex);
+                if (parsed && parsed.valid) {
+                    // ACK na SIA zprávu
+                    try {
+                        const ackBuffer = createAckMessage(rawStr);
+                        socket.write(ackBuffer);
+                        node.send([
+                            { payload: { type: "sia_message", raw: rawStr, parsed, ack: ackBuffer, timestamp: Date.now() }, topic: "sia" },
+                            parsed
+                        ]);
+                        node.status({fill:"green",shape:"dot",text:`SIA: ${parsed.event || ""}`});
+                    } catch (err) {
+                        node.warn(`ACK selhalo: ${err}`);
+                        node.status({fill:"red",shape:"ring",text:"ACK error"});
+                    }
+                } else {
+                    node.warn(`Neplatná/nerozpoznaná zpráva: ${rawStr}`);
+                    node.status({fill:"yellow",shape:"ring",text:"invalid message"});
+                }
+            });
+
+            socket.on('end', () => {
+                sockets = sockets.filter((s) => s.socket !== socket);
+                node.status({fill:"grey",shape:"ring",text:"odpojeno"});
+            });
+
+            socket.on('error', (err) => {
+                node.warn(`Chyba socketu: ${err}`);
+                sockets = sockets.filter((s) => s.socket !== socket);
+            });
+        });
+
+        server.maxConnections = MAX_CONNECTIONS;
+        server.listen(port, () => {
+            node.status({fill:"green",shape:"dot",text:`listening on ${port}`});
+        });
+
+        startPolling();
+
+        node.on('close', (done) => {
+            stopPolling();
+            sockets.forEach((s) => {
+                if (s.socket && !s.socket.destroyed) s.socket.destroy();
+            });
+            sockets = [];
+            if (server) server.close(done);
+            else done();
+        });
     }
 
-    // TCP server setup
-    server = net.createServer((socket) => {
-      socket.setNoDelay(true);
-      socket.setKeepAlive(true);
-      sockets.push(socket);
-
-      socket.on('data', (data) => onSocketData(socket, data));
-      socket.on('close', () => {
-        stopHeartbeat(socket);
-        sockets = sockets.filter(s => s !== socket);
-      });
-      socket.on('error', (err) => {
-        node.warn("Socket error: " + err.message);
-        stopHeartbeat(socket);
-        sockets = sockets.filter(s => s !== socket);
-      });
-    });
-
-    server.listen(config.port, () => {
-      node.status({ fill: "green", shape: "ring", text: "listening" });
-    });
-
-    server.on('error', (err) => {
-      node.status({ fill: "red", shape: "dot", text: "server error" });
-      node.error("Server error: " + err.message);
-      closeAllSockets();
-    });
-
-    node.on('close', function() {
-      if (server) {
-        server.close();
-        server = null;
-      }
-      closeAllSockets();
-    });
-  }
-
-  RED.nodes.registerType("galaxy-sia-in", GalaxySIAInNode);
+    RED.nodes.registerType("galaxy-sia-in", GalaxySiaInNode);
 };
