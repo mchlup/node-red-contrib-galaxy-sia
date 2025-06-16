@@ -1,14 +1,14 @@
 /**
  * Node-RED node for Honeywell Galaxy SIA DC-09 integration.
- * (C) 2021-2024 Michal Lupinek
- * Modifikace: Oprava handshake/ACK a přidání správného DC-09 polling inquiry.
+ * (C) 2021-2024 Michal Lupinek, Martin Chlup
+ * Opravy: robustní handshake, inquiry polling, správné ACK, validace.
  */
 
 const net = require('net');
 const { createAckMessage } = require('./lib/sia-ack');
 const { parseSIA } = require('./lib/sia-parser');
 
-const HEARTBEAT_INTERVAL_DEFAULT = 60; // seconds
+const HEARTBEAT_INTERVAL_DEFAULT = 60;
 const HEARTBEAT_PAYLOAD = "HEARTBEAT";
 const MAX_CONNECTIONS = 20;
 
@@ -17,7 +17,7 @@ module.exports = function(RED) {
         RED.nodes.createNode(this, config);
         const node = this;
 
-        // Trim a uprav config.account
+        // Ošetři a validuj účet
         config.account = (config.account || "").trim().toUpperCase();
 
         const port = Number(config.port) || 10000;
@@ -27,9 +27,8 @@ module.exports = function(RED) {
         let server, heartbeatTimer = null, sockets = [];
 
         function sendInquiry(socket, account, seq = "00") {
-            // Inquiry zpráva dle DC-09: I<account>,<seq>,00\r\n
             const acc = (account || config.account || "").trim().toUpperCase();
-            // Z historických důvodů je sekvence často "00"
+            if (!acc) return;
             const message = `I${acc},${seq},00\r\n`;
             socket.write(message);
             node.status({fill:"blue",shape:"dot",text:`inquiry sent (${acc})`});
@@ -60,31 +59,27 @@ module.exports = function(RED) {
             heartbeatTimer = null;
         }
 
-        // TCP server nastavení
+        // TCP server
         server = net.createServer((socket) => {
-            // TCP socket nastavení
             socket.setNoDelay(true);
             socket.setKeepAlive(true, 60000);
 
-            // Vytvořit záznam pro správu spojení
             const socketObj = { socket, account: null };
             sockets.push(socketObj);
 
             node.status({fill:"yellow",shape:"dot",text:"připojeno"});
 
             socket.on('data', (data) => {
-                let rawStr = data.toString().trim(); // Ořež CR/LF
+                let rawStr = data.toString().trim();
 
-                // Detekce handshake (F#... nebo D#...)
+                // Handshake detekce (F#... nebo D#...)
                 const handshakeMatch = /^([FD]#?[0-9A-Za-z]+)/.exec(rawStr);
                 if (handshakeMatch) {
-                    // Extrakce účtu (po #), opět trim + uppercase
                     let account = "";
                     const accMatch = /#([0-9A-Za-z]+)/.exec(rawStr);
                     if (accMatch) account = accMatch[1].trim().toUpperCase();
 
                     socketObj.account = account;
-                    // Vytvoř ACK (vždy padnutý účet na 4 znaky)
                     let ackBuffer;
                     try {
                         ackBuffer = createAckMessage(rawStr);
@@ -94,24 +89,22 @@ module.exports = function(RED) {
                         node.status({fill:"red",shape:"ring",text:"ACK error"});
                         return;
                     }
-                    // Odpověď na handshake
                     node.send([
                         { payload: { type: "handshake", raw: rawStr, account, ack: ackBuffer }, topic: "handshake" },
                         null
                     ]);
                     node.status({fill:"green",shape:"dot",text:"handshake"});
 
-                    // Po handshake ihned pošli inquiry, pokud nastaveno
+                    // Po handshake ihned inquiry pokud nastaveno
                     if (pollingType === "inquiry") {
                         sendInquiry(socket, account, "00");
                     }
                     return;
                 }
 
-                // Není handshake - parsuj jako SIA zprávu
+                // Není handshake – parsuj jako SIA
                 const parsed = parseSIA(rawStr, config.siaLevel, config.encryption, config.key, config.hex);
                 if (parsed && parsed.valid) {
-                    // ACK na SIA zprávu
                     try {
                         const ackBuffer = createAckMessage(rawStr);
                         socket.write(ackBuffer);
