@@ -1,7 +1,7 @@
 /**
  * Node-RED node for Honeywell Galaxy SIA DC-09 integration.
- * (C) 2021-2024 Michal Lupinek, Martin Chlup
- * Opravy: robustní handshake, inquiry polling, správné ACK, validace.
+ * (C) 2021-2025 Michal Lupinek, Martin Chlup
+ * Opravy: handshake, inquiry polling, správné ACK, validace, konfigurace.
  */
 
 const net = require('net');
@@ -23,6 +23,7 @@ module.exports = function(RED) {
         const port = Number(config.port) || 10000;
         const heartbeatInterval = Number(config.heartbeatInterval) || HEARTBEAT_INTERVAL_DEFAULT;
         const pollingType = config.pollingType || "inquiry";
+        const debug = !!config.debug;
 
         let server, heartbeatTimer = null, sockets = [];
 
@@ -32,11 +33,13 @@ module.exports = function(RED) {
             const message = `I${acc},${seq},00\r\n`;
             socket.write(message);
             node.status({fill:"blue",shape:"dot",text:`inquiry sent (${acc})`});
+            if (debug) node.log(`Inquiry sent: ${message.replace('\r\n','')}`);
         }
 
         function sendHeartbeat(socket) {
             socket.write(HEARTBEAT_PAYLOAD);
             node.status({fill:"blue",shape:"dot",text:"heartbeat sent"});
+            if (debug) node.log("HEARTBEAT sent.");
         }
 
         function startPolling() {
@@ -72,6 +75,8 @@ module.exports = function(RED) {
             socket.on('data', (data) => {
                 let rawStr = data.toString().trim();
 
+                if (debug) node.log(`Přijato: ${rawStr}`);
+
                 // Handshake detekce (F#... nebo D#...)
                 const handshakeMatch = /^([FD]#?[0-9A-Za-z]+)/.exec(rawStr);
                 if (handshakeMatch) {
@@ -84,6 +89,7 @@ module.exports = function(RED) {
                     try {
                         ackBuffer = createAckMessage(rawStr);
                         socket.write(ackBuffer);
+                        if (debug) node.log(`ACK sent: ${ackBuffer.toString('ascii').replace(/\r?\n/g,'')}`);
                     } catch (err) {
                         node.warn(`ACK generování selhalo: ${err}`);
                         node.status({fill:"red",shape:"ring",text:"ACK error"});
@@ -108,6 +114,7 @@ module.exports = function(RED) {
                     try {
                         const ackBuffer = createAckMessage(rawStr);
                         socket.write(ackBuffer);
+                        if (debug) node.log(`ACK sent: ${ackBuffer.toString('ascii').replace(/\r?\n/g,'')}`);
                         node.send([
                             { payload: { type: "sia_message", raw: rawStr, parsed, ack: ackBuffer, timestamp: Date.now() }, topic: "sia" },
                             parsed
