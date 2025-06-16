@@ -1,6 +1,6 @@
 {
   "name": "node-red-contrib-galaxy-sia",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "Node-RED SIA DC-09 integration for Honeywell Galaxy Dimension panels",
   "main": "galaxy-sia-in.js",
   "keywords": [
@@ -13,14 +13,7 @@
   ],
   "node-red": {
     "nodes": {
-      "galaxy-sia-config": "galaxy-sia-config.js",
-      "galaxy-sia-in": "galaxy-sia-in.js",
-      "galaxy-sia-out": "galaxy-sia-out.js",
-      "galaxy-sia-arm": "galaxy-sia-arm.js",
-      "galaxy-sia-disarm": "galaxy-sia-disarm.js",
-      "galaxy-sia-bypass": "galaxy-sia-bypass.js",
-      "galaxy-sia-restore": "galaxy-sia-restore.js",
-      "galaxy-sia-pgm": "galaxy-sia-pgm.js"
+      "galaxy-sia-in": "galaxy-sia-in.js"
     }
   },
   "author": "Martin Chlup",
