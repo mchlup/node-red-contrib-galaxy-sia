@@ -22,6 +22,10 @@
       <option value="heartbeat">HEARTBEAT (ne SIA)</option>
     </select>
   </div>
+  <div class="form-row">
+    <label for="node-input-debug"><i class="fa fa-bug"></i> Debug výstup</label>
+    <input type="checkbox" id="node-input-debug">
+  </div>
 </script>
 
 <script type="text/javascript">
@@ -33,7 +37,8 @@ RED.nodes.registerType('galaxy-sia-in',{
     account:{ value:"" },
     port:   { value:10000 },
     heartbeatInterval: { value:60 },
-    pollingType: { value:"inquiry" }
+    pollingType: { value:"inquiry" },
+    debug: { value: false }
   },
   inputs: 0,
   outputs: 2,
